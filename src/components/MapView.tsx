@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -166,18 +166,55 @@ interface Props {
   onZoomOutToGlobe?: () => void;
 }
 
+// Debounced zoom-out detection with visual hint
 function ZoomOutDetector({ onZoomOut }: { onZoomOut: () => void }) {
   const map = useMap();
+  const [showHint, setShowHint] = useState(false);
+  const triggeredRef = useRef(false);
+
   useEffect(() => {
     const handleZoom = () => {
-      if (map.getZoom() <= 10) {
+      const zoom = map.getZoom();
+      // Show hint when approaching threshold
+      if (zoom <= 12 && zoom > 10) {
+        setShowHint(true);
+      } else {
+        setShowHint(false);
+      }
+      // Trigger transition
+      if (zoom <= 10 && !triggeredRef.current) {
+        triggeredRef.current = true;
         onZoomOut();
       }
     };
     map.on('zoomend', handleZoom);
     return () => { map.off('zoomend', handleZoom); };
   }, [map, onZoomOut]);
-  return null;
+
+  if (!showHint) return null;
+
+  return (
+    <div style={{
+      position: 'absolute',
+      bottom: '100px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 1000,
+      background: 'rgba(15,23,42,0.85)',
+      backdropFilter: 'blur(8px)',
+      border: '1px solid rgba(59,130,246,0.3)',
+      borderRadius: '12px',
+      padding: '8px 16px',
+      color: '#93c5fd',
+      fontSize: '11px',
+      fontFamily: 'system-ui',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      animation: 'fade-in 0.3s ease',
+    }}>
+      🌍 Zoom out more to return to globe view
+    </div>
+  );
 }
 
 export default function MapView({ npcs, avatars, onNPCClick, focusedNPCId, onZoomOutToGlobe }: Props) {
@@ -234,6 +271,7 @@ export default function MapView({ npcs, avatars, onNPCClick, focusedNPCId, onZoo
         zoom={DEFAULT_ZOOM}
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
+        minZoom={8}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'

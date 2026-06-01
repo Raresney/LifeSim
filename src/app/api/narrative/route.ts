@@ -2,6 +2,88 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? '';
 
+// Free models to try in order — if one is rate-limited, fall back to next
+const FREE_MODELS = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'qwen/qwen3-coder:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+];
+
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 3000;
+
+async function callOpenRouter(model: string, prompt: string): Promise<{ success: boolean; narrative?: string; retryable?: boolean }> {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/Raresney/LifeSim',
+        'X-Title': 'LifeSim NPC Simulator',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 350,
+        temperature: 0.85,
+      }),
+    });
+
+    const data = await response.json();
+
+    // Rate limited — try next model
+    if (response.status === 429 || data.error?.code === 429) {
+      return { success: false, retryable: true };
+    }
+
+    // Model not found — skip permanently
+    if (response.status === 404 || data.error?.code === 404) {
+      return { success: false, retryable: false };
+    }
+
+    // Other error
+    if (data.error) {
+      return { success: false, retryable: true };
+    }
+
+    let narrative = data.choices?.[0]?.message?.content;
+    if (narrative) {
+      // Clean garbled output: some models produce "&l&e&t&t&e&r&s&" patterns
+      // Detect: if more than 10% of characters are '&', it's garbled
+      const ampCount = (narrative.match(/&/g) || []).length;
+      if (ampCount > narrative.length * 0.1) {
+        // Try to recover: remove all '&' that appear between single characters
+        narrative = narrative.replace(/&(?=[a-zA-Z](?:&|$))/g, '');
+        // If still mostly garbled, reject this model's output
+        const stillGarbled = ((narrative.match(/&/g) || []).length) > narrative.length * 0.05;
+        if (stillGarbled) {
+          return { success: false, retryable: true };
+        }
+      }
+      // Clean any remaining HTML entities
+      narrative = narrative
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+      return { success: true, narrative };
+    }
+
+    return { success: false, retryable: true };
+  } catch {
+    return { success: false, retryable: true };
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function POST(req: NextRequest) {
   const { npc, memory, relationships } = await req.json();
 
@@ -17,7 +99,7 @@ export async function POST(req: NextRequest) {
       `${r.name} (${r.type}, trust: ${r.trust}, affection: ${r.affection})`
     ).join(', ');
 
-  const prompt = `You are narrating the inner world of an NPC in a life simulation. Write in first person as this character. Be vivid, specific, and emotionally authentic. Keep it under 150 words.
+  const prompt = `You are narrating the inner world of an NPC in a life simulation set in Iași, Romania. Write in first person as this character. Be vivid, specific, emotionally authentic, and include local Romanian cultural details. Keep it under 150 words.
 
 CHARACTER:
 Name: ${npc.name}, Age: ${npc.age}, Occupation: ${npc.occupation}
@@ -32,30 +114,32 @@ ${npc.goals.map((g: { description: string; progress: number }) => `- ${g.descrip
 
 RELATIONSHIPS: ${relationshipSummary || 'None notable'}
 
+RECENT MEMORIES:
 ${memory || 'No significant memories yet.'}
 
-Write what this character has been doing recently, what they're thinking right now, their plans, and how they feel about the people around them.`;
+Write what this character is thinking right now, their recent reflections, plans for the near future, and how they feel about the people in their life. Make it personal and emotional.`;
 
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
-        temperature: 0.8,
-      }),
-    });
+  // Try each model with retries
+  for (const model of FREE_MODELS) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const result = await callOpenRouter(model, prompt);
 
-    const data = await response.json();
-    const narrative = data.choices?.[0]?.message?.content ?? 'Could not generate narrative.';
+      if (result.success && result.narrative) {
+        return NextResponse.json({ narrative: result.narrative, model });
+      }
 
-    return NextResponse.json({ narrative });
-  } catch {
-    return NextResponse.json({ narrative: 'Error connecting to OpenRouter API.' }, { status: 500 });
+      if (!result.retryable) break; // Model not found, skip to next
+
+      // Wait before retry (only if we'll retry)
+      if (attempt < MAX_RETRIES) {
+        await sleep(RETRY_DELAY_MS);
+      }
+    }
   }
+
+  // All models failed — return helpful error
+  return NextResponse.json({
+    narrative: '⏳ All free LLM models are temporarily rate-limited. This happens with shared API keys during peak hours. Try again in 10-15 seconds — the models rotate availability.',
+    model: 'none',
+  });
 }

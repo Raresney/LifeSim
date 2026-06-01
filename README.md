@@ -26,7 +26,8 @@ The core challenge: make NPCs feel alive without running an LLM for each one con
 │  ─ Called ONLY when user clicks "Explore Inner World"│
 │  ─ Receives NPC state, memories, relationships       │
 │  ─ Returns first-person narration (~150 words)       │
-│  ─ Model: Llama 3.1 8B via OpenRouter (free tier)    │
+│  ─ Multi-model fallback with retry logic             │
+│  ─ Garbled output detection and auto-rejection       │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -34,14 +35,14 @@ The core challenge: make NPCs feel alive without running an LLM for each one con
 
 Each tick (1 simulated hour), every NPC evaluates all possible actions through weighted scoring:
 
-| Factor | What it does | Example |
-|--------|-------------|---------|
-| **needsScore** | Maps stats to actions | Hunger 80% → eating scores high |
-| **timeScore** | Time-appropriate actions | 3 AM → sleeping scores high |
-| **personalityScore** | Trait bonuses | `ambitious` → working bonus |
-| **moodScore** | Emotional influence | `stressed` → relaxing bonus |
-| **goalScore** | Goal-driven behavior | "get promotion" → working bonus |
-| **inertiaScore** | Continuity preference | Already working → keep working |
+| Factor | Weight | What it does | Example |
+|--------|--------|-------------|---------|
+| **needsScore** | 0.30 | Maps stats to actions | Hunger 80% → eating scores high |
+| **timeScore** | 0.20 | Time-appropriate actions | 3 AM → sleeping scores high |
+| **personalityScore** | 0.20 | Trait bonuses | `ambitious` → working bonus |
+| **moodScore** | 0.15 | Emotional influence | `stressed` → relaxing bonus |
+| **goalScore** | 0.10 | Goal-driven behavior | "get promotion" → working bonus |
+| **inertiaScore** | 0.05 | Continuity preference | Already working → keep working |
 
 The top 3 scoring actions enter a **weighted random selection** — NPCs don't always pick the optimal choice, making behavior feel natural and unpredictable.
 
@@ -87,28 +88,87 @@ Rumors spread through social interactions with a "telephone game" mechanic:
 - Rumors have a credibility score that decays with distortion
 - Old rumors are automatically pruned
 
+## LLM Integration
+
+### Multi-Model Fallback
+
+The API route (`src/app/api/narrative/route.ts`) tries multiple free models in sequence:
+
+1. **Llama 3.3 70B** (meta-llama)
+2. **Gemma 4 26B** (Google)
+3. **Llama 3.2 3B** (meta-llama)
+4. **Qwen3 Coder** (Alibaba)
+5. **Hermes 3 405B** (NousResearch)
+
+Each model gets up to 2 retries with 3-second delays for rate limiting. If a model returns garbled output (>10% ampersand characters), it's automatically rejected and the next model is tried.
+
+### Output Sanitization
+
+LLM responses are sanitized before display:
+- Garbled `&l&e&t&t&e&r&` patterns are detected and cleaned
+- HTML entities are decoded
+- Responses that can't be cleaned are rejected, triggering fallback to the next model
+
+### PDF Export
+
+Users can export any NPC's inner world narrative as a PDF report containing:
+- NPC profile (name, occupation, personality, stats)
+- Current goals and progress
+- Relationship map with trust/affection/respect scores
+- Recent memories
+- Full LLM-generated inner monologue
+- Model attribution and timestamp
+
+## Security
+
+### API Key Protection
+- OpenRouter API key is stored in `.env.local` (gitignored, never committed)
+- Key is only accessible server-side via Next.js API route (`/api/narrative`)
+- Client-side code never sees or transmits the key
+- API route includes `HTTP-Referer` and `X-Title` headers for OpenRouter tracking
+
+### Input Validation
+- LLM prompts are constructed server-side from validated NPC state
+- No user-provided text is passed directly to the LLM
+- Response content is sanitized before rendering
+
+### Rate Limiting Considerations
+- Free-tier models have built-in rate limits via OpenRouter
+- Retry logic respects `Retry-After` headers
+- Maximum 2 retries per model prevents infinite loops
+- For production: add per-user rate limiting middleware
+
+### Data Privacy
+- All simulation data runs client-side in the browser
+- No user data is stored on any server
+- LLM calls send only NPC state (fictional data), never user information
+- No cookies, no tracking, no analytics
+
 ## UI Components
 
 | Component | Description |
 |-----------|-------------|
 | **CharacterSetup** | Pre-simulation avatar customization (skin, hair, eyes, face, accessories, clothing) |
-| **SimulationView** | Main simulation screen with globe/map, sidebar, controls |
-| **GlobeView** | 3D globe (globe.gl) with country borders, NPC markers, auto-rotate |
-| **MapView** | Leaflet street map of Iași, animated NPC markers, POI locations |
-| **NPCDetail** | Modal with full NPC stats, personality, goals, relationships, memories, LLM button |
+| **SimulationView** | Main simulation screen with globe/map, sidebar, controls, smooth view transitions |
+| **GlobeView** | 3D globe (globe.gl) with country borders, Romania highlighted, cinematic entry animation |
+| **MapView** | Leaflet street map of Iasi, animated NPC markers, POI locations, zoom-out hint |
+| **NPCDetail** | Modal with full NPC stats, personality, goals, relationships, memories, LLM + PDF export |
 | **Avatar** | SVG-based avatar renderer with mood-dependent expressions |
 | **Timeline** | Event log with type-based icons and colors |
 
 ### Globe ↔ Map Navigation
 
-- **Default view**: 3D globe showing Earth with NPC markers on Iași
-- **Click NPC** (sidebar or globe): Transitions to Leaflet street map zoomed on that NPC
-- **Zoom out** on street map (below level 10): Automatically transitions back to 3D globe
-- **Zoom in** on globe (past threshold): Automatically transitions to street map
+The app features a smooth hybrid navigation system with fade transitions:
+
+- **Default view**: 3D globe showing Earth with Romania highlighted, NPC markers on Iasi
+- **Click NPC** (sidebar or globe): Fade transition to Leaflet street map zoomed on that NPC
+- **Zoom out** on street map (below level 10): Visual hint appears, then auto-transitions back to globe
+- **Zoom in** on globe (past altitude threshold): Auto-transitions to street map
+- **View mode indicator**: Badge in top-left shows current mode (Globe/Street)
 
 ## NPCs
 
-10 NPCs with Romanian names, living in Iași:
+10 NPCs with Romanian names, living in Iasi:
 
 | Name | Occupation | Personality | Starting Relationships |
 |------|-----------|-------------|----------------------|
@@ -127,25 +187,41 @@ Rumors spread through social interactions with a "telephone game" mechanic:
 
 The current implementation handles 10 NPCs. Here's how the architecture would scale:
 
-### Decision Layer — Tiered Approach
+### Decision Layer — Three-Tier Approach
 
-| NPC Count | Method | When Used | Compute Cost |
-|-----------|--------|-----------|-------------|
-| Background (900+) | **Markov Chain** | NPCs nobody is watching | Near zero — one random number + matrix lookup |
-| Foreground (50-100) | **Utility AI** | NPCs visible on screen | Low — weighted scoring per tick |
-| Detail (1) | **LLM** | User clicks to explore | High — API call |
+| Tier | NPC Count | Method | Compute Cost | When Used |
+|------|-----------|--------|-------------|-----------|
+| Background | 400+ | **Markov Chain** | Near zero — 1 random number + matrix lookup | NPCs nobody is watching |
+| Foreground | 50-100 | **Utility AI** | Low — weighted scoring per tick | NPCs visible on screen |
+| Detail | 1 | **LLM** | One API call on-demand | User clicks "Explore Inner World" |
 
-**Markov Chains** for background NPCs: each NPC has a transition matrix (state → next state probabilities) derived from their personality traits. A `lazy` NPC's matrix has higher `relaxing → relaxing` probability. Ultra-fast but less nuanced.
+### Markov Chains for Background NPCs
 
-**Utility AI** for visible NPCs: full scoring with all factors. More expensive but produces richer behavior.
+Each NPC gets a **transition matrix** derived from their personality traits — a table of probabilities mapping current state to next state:
 
-### LLM Scaling
+```
+Example: Dan (lazy personality)
+                sleeping  working  eating  socializing  relaxing
+If sleeping:      0.70     0.10    0.15      0.02        0.03
+If working:       0.10     0.30    0.20      0.10        0.30
+If relaxing:      0.15     0.05    0.15      0.05        0.60  ← stays relaxing
+```
 
-- **Cache layer** (Redis): Store narrative per NPC + state hash. Same state = serve from cache
-- **Pre-generation**: Background worker generates narratives on major state changes (mood shift, conflict, job change)
-- **Queue with priority**: Active/watched NPCs get priority, idle NPCs wait
-- **Tiered models**: Important NPCs → larger model, minor NPCs → small model or template fallback
-- **Rate limiting**: Prevent spam clicks from burning API quota
+A `lazy` NPC has high `relaxing → relaxing` probability. An `ambitious` NPC has high `working → working`. The math is trivial: generate one random number, look up the next state. **1000 NPCs in under 1ms.**
+
+### Promotion & Demotion
+
+When the user zooms into a neighborhood:
+- Visible NPCs get **promoted** from Markov → Utility AI (richer behavior)
+- NPCs the user leaves behind get **demoted** back to Markov
+- The player never notices — Markov kept them in a plausible state
+
+### LLM Scaling — Four Strategies
+
+1. **State-hash caching** (Redis): Hash NPC key state (mood + activity + top memory + relationships). Same state = serve from cache. Covers ~80% of clicks.
+2. **Pre-generation**: Background worker generates narratives on major state changes (mood shift, conflict, new relationship). Narrative is ready before the user clicks.
+3. **Priority queue**: Currently viewed NPC = priority 1, visible NPCs = priority 2, everyone else waits.
+4. **Tiered models**: Important NPCs → 70B model, minor NPCs → 3B model or template fallback, background NPCs → no LLM.
 
 ### Behavioral Divergence
 
@@ -160,10 +236,12 @@ Even with identical starting parameters, NPCs diverge rapidly through:
 - **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **3D Globe**: globe.gl (Three.js)
+- **3D Globe**: globe.gl (Three.js) with topojson-client for country borders
 - **Street Map**: Leaflet + react-leaflet (CartoDB Voyager tiles)
-- **LLM**: OpenRouter API (Llama 3.1 8B Instruct, free tier)
+- **LLM**: OpenRouter API (multi-model fallback: Llama 3.3, Gemma 4, Qwen3)
+- **PDF Export**: jsPDF (client-side generation)
 - **Avatars**: Custom SVG rendering
+- **State Management**: React hooks (no Redux needed)
 
 ## Getting Started
 
@@ -185,32 +263,32 @@ Open [http://localhost:3001](http://localhost:3001) — customize avatars, then 
 ```
 src/
 ├── app/
-│   ├── api/narrative/    # LLM endpoint (OpenRouter)
+│   ├── api/narrative/    # LLM endpoint (multi-model fallback + sanitization)
 │   ├── page.tsx          # Entry point (setup → simulation)
 │   └── layout.tsx
 ├── components/
-│   ├── GlobeView.tsx     # 3D globe with globe.gl
-│   ├── MapView.tsx       # Leaflet street map
-│   ├── SimulationView.tsx # Main simulation UI
+│   ├── GlobeView.tsx     # 3D globe with globe.gl, Romania highlight, cinematic zoom
+│   ├── MapView.tsx       # Leaflet street map, animated markers, zoom-out detection
+│   ├── SimulationView.tsx # Main UI, hybrid globe/map with fade transitions
 │   ├── CharacterSetup.tsx # Avatar customization
-│   ├── NPCDetail.tsx     # NPC detail modal + LLM
+│   ├── NPCDetail.tsx     # NPC detail modal + LLM narrative + PDF export
 │   ├── Avatar.tsx        # SVG avatar renderer
 │   └── Timeline.tsx      # Event log
 ├── engine/
 │   ├── types.ts          # All interfaces
-│   ├── utility-ai.ts     # Action scoring
-│   ├── memory.ts         # Memory system
-│   ├── social.ts         # Relationships
-│   ├── rumors.ts         # Rumor propagation
-│   ├── economy.ts        # Jobs & spending
-│   ├── life-events.ts    # Random events
+│   ├── utility-ai.ts     # Action scoring (6-factor weighted system)
+│   ├── memory.ts         # Short/long-term memory with emotional decay
+│   ├── social.ts         # Relationship graph (trust/affection/respect)
+│   ├── rumors.ts         # Rumor propagation with distortion
+│   ├── economy.ts        # Jobs, salaries & spending
+│   ├── life-events.ts    # Random life events
 │   ├── events.ts         # Social interactions
-│   ├── tick.ts           # Main loop
-│   ├── world.ts          # World init
+│   ├── tick.ts           # Main loop orchestrator
+│   ├── world.ts          # World initialization
 │   └── avatar.ts         # Avatar types & defaults
 ├── data/
 │   ├── npcs.ts           # 10 NPC definitions
-│   └── locations.ts      # Iași coordinates & POIs
+│   └── locations.ts      # Iasi coordinates & POIs
 └── hooks/
-    └── useSimulation.ts  # React simulation hook
+    └── useSimulation.ts  # React simulation hook (single source of truth)
 ```

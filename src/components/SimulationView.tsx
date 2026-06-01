@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { NPC } from '../engine/types';
 import { AvatarConfig } from '../engine/avatar';
@@ -32,23 +32,81 @@ const ACTIVITY_ICON: Record<string, string> = {
   scheming: '🤫', helping: '🤝', gossiping: '👀',
 };
 
+type ViewMode = 'globe' | 'map' | 'transitioning-to-map' | 'transitioning-to-globe';
+
 export default function SimulationView({ avatars, onBack }: Props) {
   const { world, recentEvents, formattedTime, tick, play, pause, setSpeed, reset } = useSimulation();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
   const [focusedNPC, setFocusedNPC] = useState<NPC | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('globe');
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const npcs = Array.from(world.npcs.values());
   const viewing = focusedNPC ? (world.npcs.get(focusedNPC.id) ?? focusedNPC) : null;
 
+  // Smooth transition: globe → map
+  const transitionToMap = useCallback((npc: NPC) => {
+    if (viewMode === 'transitioning-to-map') return;
+    setFocusedNPC(npc);
+    setViewMode('transitioning-to-map');
+    // Let fade overlay appear, then switch view
+    if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+    transitionTimeoutRef.current = setTimeout(() => {
+      setViewMode('map');
+    }, 400);
+  }, [viewMode]);
+
+  // Smooth transition: map → globe
+  const transitionToGlobe = useCallback(() => {
+    if (viewMode === 'transitioning-to-globe') return;
+    setViewMode('transitioning-to-globe');
+    if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+    transitionTimeoutRef.current = setTimeout(() => {
+      setFocusedNPC(null);
+      setViewMode('globe');
+    }, 400);
+  }, [viewMode]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+    };
+  }, []);
+
+  const isShowingMap = viewMode === 'map' || viewMode === 'transitioning-to-globe';
+  const isShowingGlobe = viewMode === 'globe' || viewMode === 'transitioning-to-map';
+  const isTransitioning = viewMode === 'transitioning-to-map' || viewMode === 'transitioning-to-globe';
+
   return (
     <div className="h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden relative flex flex-col">
 
+      {/* ── Transition overlay ── */}
+      <div
+        className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-400"
+        style={{
+          opacity: isTransitioning ? 1 : 0,
+          background: 'radial-gradient(ellipse at center, rgba(15,23,42,0.95) 0%, rgba(9,9,11,0.98) 100%)',
+        }}
+      >
+        {isTransitioning && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 animate-pulse">
+              <div className="w-8 h-8 border-2 border-blue-400/60 border-t-blue-400 rounded-full animate-spin" />
+              <span className="text-xs text-zinc-400 tracking-wider uppercase">
+                {viewMode === 'transitioning-to-map' ? 'Zooming in...' : 'Returning to globe...'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── Top Bar ── */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2.5 pointer-events-none">
-        {/* Left: City name */}
-        <div className="pointer-events-auto">
+        {/* Left: City name + view mode indicator */}
+        <div className="pointer-events-auto flex items-center gap-2">
           <button onClick={onBack} className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-xl px-4 py-2 hover:bg-zinc-800/80 transition-colors">
             <span className="text-sm text-zinc-400">&larr;</span>
             <div>
@@ -56,6 +114,14 @@ export default function SimulationView({ avatars, onBack }: Props) {
               <div className="text-[10px] text-zinc-500">{formattedTime}</div>
             </div>
           </button>
+          {/* View mode badge */}
+          <div className={`text-[10px] px-2.5 py-1 rounded-full font-medium uppercase tracking-wider transition-all duration-300 ${
+            isShowingMap
+              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+          }`}>
+            {isShowingMap ? '🗺️ Street' : '🌍 Globe'}
+          </div>
         </div>
 
         {/* Right: focused NPC stats or world stats */}
@@ -98,7 +164,13 @@ export default function SimulationView({ avatars, onBack }: Props) {
               return (
                 <button
                   key={npc.id}
-                  onClick={() => setFocusedNPC(isFocused ? null : npc)}
+                  onClick={() => {
+                    if (isFocused) {
+                      transitionToGlobe();
+                    } else {
+                      transitionToMap(npc);
+                    }
+                  }}
                   onDoubleClick={() => setSelectedNPC(npc)}
                   className={`w-full text-left px-4 py-3 border-b border-zinc-800/50 transition-colors ${
                     isFocused ? 'bg-zinc-700/40' : 'hover:bg-zinc-800/50'
@@ -110,6 +182,10 @@ export default function SimulationView({ avatars, onBack }: Props) {
                       <div className="text-sm font-medium text-zinc-200 truncate">{npc.name}</div>
                       <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{npc.occupation}</div>
                     </div>
+                    {/* Activity indicator */}
+                    <span className="text-sm opacity-70">
+                      {ACTIVITY_ICON[npc.currentActivity] ?? '❓'}
+                    </span>
                   </div>
                   {isFocused && (
                     <div className="mt-2 ml-11 space-y-1">
@@ -143,7 +219,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
 
       {/* ── Map background: Globe overview or Street map when focused ── */}
       <div className="absolute inset-0 z-0">
-        {focusedNPC ? (
+        {isShowingMap ? (
           <MapView
             npcs={world.npcs}
             avatars={avatars}
@@ -152,30 +228,28 @@ export default function SimulationView({ avatars, onBack }: Props) {
               setSelectedNPC(npc);
             }}
             focusedNPCId={focusedNPC?.id ?? null}
-            onZoomOutToGlobe={() => setFocusedNPC(null)}
+            onZoomOutToGlobe={transitionToGlobe}
           />
         ) : (
           <GlobeView
             npcs={world.npcs}
             avatars={avatars}
             onNPCClick={(npc) => {
-              setFocusedNPC(npc);
+              transitionToMap(npc);
             }}
             focusedNPCId={null}
             onZoomIn={() => {
-              // User zoomed in on globe past threshold — switch to street map
-              // Focus on first NPC as default so map shows Iași
               const first = Array.from(world.npcs.values())[0];
-              if (first) setFocusedNPC(first);
+              if (first) transitionToMap(first);
             }}
           />
         )}
       </div>
 
       {/* ── "doing now" floating card (when NPC focused) ── */}
-      {viewing && (
+      {viewing && !isTransitioning && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
-          <div className="bg-zinc-900/85 backdrop-blur-md border border-zinc-700/50 rounded-2xl px-5 py-2.5 flex items-center gap-3">
+          <div className="bg-zinc-900/85 backdrop-blur-md border border-zinc-700/50 rounded-2xl px-5 py-2.5 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">doing now:</span>
             <div className="flex items-center gap-1.5 bg-zinc-800/80 rounded-lg px-3 py-1">
               <span>{ACTIVITY_ICON[viewing.currentActivity] ?? '❓'}</span>

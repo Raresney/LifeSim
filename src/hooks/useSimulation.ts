@@ -13,7 +13,8 @@ export function useSimulation() {
   const tick = useCallback(() => {
     setWorld(prev => {
       const { world: next, events } = processTick(prev);
-      setRecentEvents(events);
+      // Schedule event update outside of setWorld to avoid nested state updates
+      queueMicrotask(() => setRecentEvents(events));
       return next;
     });
   }, []);

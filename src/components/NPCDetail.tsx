@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { NPC, Relationship } from '../engine/types';
 import { AvatarConfig } from '../engine/avatar';
 import { summarizeMemoryForLLM } from '../engine/memory';
@@ -17,9 +17,12 @@ interface Props {
 export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose }: Props) {
   const [narrative, setNarrative] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [usedModel, setUsedModel] = useState<string | null>(null);
 
   const generateNarrative = async () => {
     setLoading(true);
+    setNarrative(null);
+    setUsedModel(null);
     try {
       const res = await fetch('/api/narrative', {
         method: 'POST',
@@ -47,11 +50,163 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
       });
       const data = await res.json();
       setNarrative(data.narrative);
+      if (data.model && data.model !== 'none') setUsedModel(data.model);
     } catch {
       setNarrative('Failed to generate narrative. Check API configuration.');
     }
     setLoading(false);
   };
+
+  const exportPDF = useCallback(async () => {
+    if (!narrative) return;
+    const { default: jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const maxWidth = pageWidth - margin * 2;
+    let y = 20;
+
+    // Clean text: fix garbled "&l&e&t&t&e&r&" patterns and HTML entities
+    const clean = (text: string) => {
+      let cleaned = text;
+      // Fix garbled pattern: "&l&e&t&t&e&r&s&" → "letters"
+      const ampCount = (cleaned.match(/&/g) || []).length;
+      if (ampCount > cleaned.length * 0.1) {
+        cleaned = cleaned.replace(/&(?=[a-zA-Z](?:&|$))/g, '');
+      }
+      return cleaned
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&[a-z]+;/g, '')
+        .trim();
+    };
+
+    // Helper: add text with word wrap and auto page break
+    const addText = (rawText: string, fontSize: number, style: 'normal' | 'bold' | 'italic' = 'normal', color: [number, number, number] = [30, 41, 59]) => {
+      const text = clean(rawText);
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', style);
+      doc.setTextColor(...color);
+      const lineHeight = fontSize * 0.5;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      for (const line of lines) {
+        if (y > 275) { doc.addPage(); y = 20; }
+        doc.text(line, margin, y);
+        y += lineHeight;
+      }
+    };
+
+    // Header line
+    doc.setDrawColor(59, 130, 246);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 8;
+
+    // Title
+    addText('LifeSim — Inner World Report', 18, 'bold', [59, 130, 246]);
+    y += 4;
+
+    // NPC name & info
+    addText(`${npc.name}`, 22, 'bold');
+    y += 2;
+    addText(`${npc.occupation} · ${npc.age} years · Mood: ${npc.currentMood}`, 11, 'normal', [100, 116, 139]);
+    y += 2;
+    addText(`Personality: ${npc.personality.join(', ')}`, 10, 'italic', [100, 116, 139]);
+    y += 6;
+
+    // Divider
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 6;
+
+    // Stats
+    addText('STATS', 9, 'bold', [100, 116, 139]);
+    y += 1;
+    addText(`Energy: ${npc.stats.energy}%  |  Health: ${npc.stats.health}%  |  Happiness: ${npc.stats.happiness}%  |  Stress: ${npc.stats.stress}%  |  Money: $${npc.stats.money}`, 10, 'normal');
+    y += 4;
+
+    // Currently
+    addText('CURRENTLY', 9, 'bold', [100, 116, 139]);
+    y += 1;
+    addText(`${npc.currentActivity} at ${npc.currentLocation}`, 10, 'normal');
+    y += 4;
+
+    // Goals
+    const activeGoals = npc.goals.filter(g => g.status === 'active');
+    if (activeGoals.length > 0) {
+      addText('GOALS', 9, 'bold', [100, 116, 139]);
+      y += 1;
+      for (const g of activeGoals) {
+        addText(`• ${g.description} (${g.progress}%)`, 10, 'normal');
+      }
+      y += 4;
+    }
+
+    // Relationships
+    const notableRels = relationships.filter(r => r.type !== 'acquaintance');
+    if (notableRels.length > 0) {
+      addText('RELATIONSHIPS', 9, 'bold', [100, 116, 139]);
+      y += 1;
+      for (const r of notableRels) {
+        const other = allNPCs.get(r.targetId)?.name ?? '?';
+        addText(`• ${other} — ${r.type.replace('_', ' ')} (Trust: ${r.trust}, Affection: ${r.affection}, Respect: ${r.respect})`, 10, 'normal');
+      }
+      y += 4;
+    }
+
+    // Recent memories
+    const memories = npc.memory.shortTerm.slice(0, 5);
+    if (memories.length > 0) {
+      addText('RECENT MEMORIES', 9, 'bold', [100, 116, 139]);
+      y += 1;
+      for (const m of memories) {
+        addText(`• ${m.description}`, 10, 'normal');
+      }
+      y += 4;
+    }
+
+    // Divider before narrative
+    doc.setDrawColor(59, 130, 246);
+    doc.setLineWidth(0.5);
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 8;
+
+    // Inner Monologue
+    addText('INNER MONOLOGUE', 10, 'bold', [59, 130, 246]);
+    if (usedModel) {
+      addText(`Model: ${usedModel}`, 8, 'italic', [148, 163, 184]);
+    }
+    y += 3;
+
+    // Narrative text — larger, with more leading
+    const cleanNarrative = clean(narrative);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(30, 41, 59);
+    const narrativeLines = doc.splitTextToSize(cleanNarrative, maxWidth);
+    for (const line of narrativeLines) {
+      if (y > 275) { doc.addPage(); y = 20; }
+      doc.text(line, margin, y);
+      y += 5.5;
+    }
+
+    // Footer
+    y += 8;
+    if (y > 275) { doc.addPage(); y = 20; }
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+    addText(`Generated by LifeSim — ${new Date().toLocaleString()}`, 8, 'normal', [148, 163, 184]);
+
+    doc.save(`LifeSim_${npc.name}_InnerWorld.pdf`);
+  }, [narrative, npc, relationships, allNPCs, usedModel]);
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -156,13 +311,43 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
           <button
             onClick={generateNarrative}
             disabled={loading}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 text-white text-sm rounded-lg transition-colors"
+            className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-zinc-700 disabled:to-zinc-700 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 disabled:shadow-none"
           >
-            {loading ? 'Generating...' : narrative ? 'Regenerate Inner World' : 'Explore Inner World (LLM)'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Exploring inner world...
+              </span>
+            ) : narrative ? (
+              '🔄 Regenerate Inner World'
+            ) : (
+              '🧠 Explore Inner World (LLM)'
+            )}
           </button>
-          {narrative && (
-            <div className="mt-3 p-3 bg-zinc-800 rounded-lg text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+          {loading && (
+            <div className="mt-3 p-3 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <span className="animate-pulse">💭</span>
+                <span>Connecting to LLM... Trying free models with retry...</span>
+              </div>
+            </div>
+          )}
+          {narrative && !loading && (
+            <div className="mt-3 p-4 bg-zinc-800 rounded-lg text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed border border-zinc-700/50">
+              <div className="flex items-center gap-1.5 mb-2 text-[10px] text-zinc-500 uppercase tracking-wider">
+                <span>💭</span>
+                <span>Inner Monologue</span>
+                {usedModel && (
+                  <span className="ml-auto font-mono text-zinc-600">{usedModel.split('/').pop()?.replace(':free', '')}</span>
+                )}
+              </div>
               {narrative}
+              <button
+                onClick={exportPDF}
+                className="mt-3 w-full py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                📄 Export as PDF
+              </button>
             </div>
           )}
         </div>

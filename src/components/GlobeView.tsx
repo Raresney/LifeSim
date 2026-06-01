@@ -19,6 +19,9 @@ const ACTIVITY_EMOJI: Record<string, string> = {
   scheming: '🤫', helping: '🤝', gossiping: '👀',
 };
 
+// Romania's ISO numeric code in the world-atlas dataset
+const ROMANIA_ID = '642';
+
 interface Props {
   npcs: Map<string, NPC>;
   avatars: Record<string, AvatarConfig>;
@@ -43,6 +46,7 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
   const containerRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<any>(null);
   const [mounted, setMounted] = useState(false);
+  const zoomTriggeredRef = useRef(false);
 
   const getPoints = useCallback((): GlobePoint[] => {
     const points: GlobePoint[] = [];
@@ -88,15 +92,12 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(r => r.json())
       .then(topology => {
-        // Convert TopoJSON to GeoJSON features
         import('topojson-client').then(topojson => {
           countryFeatures = (topojson.feature(topology, topology.objects.countries) as any).features;
           if (globeRef.current) {
             globeRef.current.polygonsData(countryFeatures);
           }
-        }).catch(() => {
-          // topojson-client not installed, skip borders
-        });
+        }).catch(() => {});
       })
       .catch(() => {});
 
@@ -107,13 +108,21 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
         .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
         .showGraticules(false)
-        .pointOfView({ lat: 45, lng: 15, altitude: 2.0 }, 0)
-        // Country polygons (borders)
+        .pointOfView({ lat: 30, lng: 10, altitude: 2.5 }, 0)
+
+        // Country polygons — Romania highlighted, others subtle
         .polygonsData(countryFeatures)
-        .polygonCapColor(() => 'rgba(0,0,0,0)')
+        .polygonCapColor((d: any) => {
+          if (d.id === ROMANIA_ID) return 'rgba(59, 130, 246, 0.12)';
+          return 'rgba(0,0,0,0)';
+        })
         .polygonSideColor(() => 'rgba(0,0,0,0)')
-        .polygonStrokeColor(() => 'rgba(219,39,119,0.45)')
-        .polygonAltitude(0.001)
+        .polygonStrokeColor((d: any) => {
+          if (d.id === ROMANIA_ID) return 'rgba(59, 130, 246, 0.7)';
+          return 'rgba(255,255,255,0.15)';
+        })
+        .polygonAltitude((d: any) => d.id === ROMANIA_ID ? 0.004 : 0.001)
+
         // NPC & POI points
         .pointsData(getPoints())
         .pointLat('lat')
@@ -135,7 +144,8 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         .onPointClick((point: any) => {
           if (point.npc) onNPCClick(point.npc);
         })
-        // HTML markers for NPCs
+
+        // HTML markers for NPCs — pill-style with pulse animation
         .htmlElementsData(getPoints().filter(p => !p.isPOI))
         .htmlElement((d: any) => {
           const el = document.createElement('div');
@@ -145,58 +155,91 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
             transform: translate(-50%, -100%);
           `;
           const focused = d.id === focusedNPCId;
-          const glow = focused ? `box-shadow: 0 0 12px 3px ${d.color}50;` : 'box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+          const glow = focused
+            ? `box-shadow: 0 0 16px 4px ${d.color}60; animation: globe-marker-pulse 2s ease-in-out infinite;`
+            : 'box-shadow: 0 2px 10px rgba(0,0,0,0.3);';
+
           el.innerHTML = `
             <div style="
-              background: #ffffffee; border: 2px solid ${d.color}; border-radius: 20px;
-              padding: 3px 10px; display: flex; align-items: center; gap: 5px;
+              background: linear-gradient(135deg, #ffffffee, #f0f9ffee);
+              border: 2px solid ${d.color}; border-radius: 22px;
+              padding: 4px 12px; display: flex; align-items: center; gap: 6px;
               ${glow}
+              transition: all 0.3s ease;
             ">
-              <span style="font-size: 13px;">${d.emoji}</span>
+              <span style="font-size: 14px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));">${d.emoji}</span>
               <span style="font-size: 11px; color: #1e293b; font-family: system-ui; white-space: nowrap;
-                font-weight: ${focused ? '700' : '500'};">${d.name}</span>
+                font-weight: ${focused ? '700' : '500'}; letter-spacing: 0.01em;">${d.name}</span>
             </div>
-            <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid ${d.color};"></div>
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid ${d.color}; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));"></div>
           `;
           el.onclick = () => { if (d.npc) onNPCClick(d.npc); };
           return el;
         })
         .htmlAltitude(0.018)
-        .atmosphereColor('#6db3f2')
-        .atmosphereAltitude(0.18)
+
+        // Atmosphere — warm bright glow
+        .atmosphereColor('#87CEEB')
+        .atmosphereAltitude(0.25)
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight);
 
+      // Material tweaks
       const globeMat = globe.globeMaterial();
-      globeMat.bumpScale = 2;
+      globeMat.bumpScale = 3;
 
+      // Renderer tweaks
       const renderer = globe.renderer();
       renderer.domElement.style.outline = 'none';
+
+      // Inject pulse animation CSS
+      if (!document.getElementById('globe-pulse-css')) {
+        const style = document.createElement('style');
+        style.id = 'globe-pulse-css';
+        style.textContent = `
+          @keyframes globe-marker-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+          }
+        `;
+        document.head.appendChild(style);
+      }
 
       globeRef.current = globe;
       setMounted(true);
 
+      // Controls
       const controls = globe.controls();
       controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.2;
+      controls.autoRotateSpeed = 0.3;
       controls.enableDamping = true;
-      controls.dampingFactor = 0.12;
+      controls.dampingFactor = 0.15;
       controls.minDistance = 101;
-      controls.maxDistance = 700;
+      controls.maxDistance = 600;
+      controls.rotateSpeed = 0.6;
+      controls.zoomSpeed = 0.8;
 
-      // Detect zoom-in: when altitude drops below threshold, switch to street map
+      // Detect zoom-in: debounced, triggers once until reset
       controls.addEventListener('change', () => {
-        if (!globeRef.current || !onZoomIn) return;
+        if (!globeRef.current || !onZoomIn || zoomTriggeredRef.current) return;
         const pov = globeRef.current.pointOfView();
-        if (pov.altitude < 0.08) {
+        if (pov.altitude < 0.1) {
+          zoomTriggeredRef.current = true;
           onZoomIn();
         }
       });
 
-      // Animate from overview to Iași area
+      // Cinematic entry: start zoomed out, fly to Romania in stages
       setTimeout(() => {
-        globe.pointOfView({ lat: IASI_CENTER.lat, lng: IASI_CENTER.lng, altitude: 0.6 }, 2000);
-      }, 500);
+        globe.pointOfView(
+          { lat: IASI_CENTER.lat, lng: IASI_CENTER.lng, altitude: 0.5 },
+          3000 // slower, cinematic
+        );
+        // Stop auto-rotate when close to target
+        setTimeout(() => {
+          controls.autoRotate = false;
+        }, 3200);
+      }, 800);
     });
 
     return () => {
@@ -206,6 +249,11 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         globeRef.current = null;
       }
     };
+  }, []);
+
+  // Reset zoom trigger when component re-mounts (back from map)
+  useEffect(() => {
+    zoomTriggeredRef.current = false;
   }, []);
 
   // Update points when data changes
