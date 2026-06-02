@@ -6,10 +6,24 @@ import { processWorkSession, processSpending } from './economy';
 import { rollLifeEvents } from './life-events';
 import { pruneOldRumors } from './rumors';
 
+const HOURS_PER_TICK = 3;
+
+/**
+ * PERFORMANCE FIX: Subsystem throttling.
+ *
+ * Not every system needs to run every tick.
+ * Social events, memory decay, rumor pruning, and life events
+ * are staggered across ticks to reduce per-tick computation.
+ */
+const SOCIAL_EVERY = 2;       // social interactions every 2nd tick
+const MEMORY_DECAY_EVERY = 3; // memory decay every 3rd tick
+const LIFE_EVENTS_EVERY = 2;  // life events every 2nd tick
+const RUMOR_PRUNE_EVERY = 4;  // rumor pruning every 4th tick
+
 export function advanceTime(time: SimTime): SimTime {
   let { day, hour, tick } = time;
   tick += 1;
-  hour += 1;
+  hour += HOURS_PER_TICK;
 
   if (hour >= 24) {
     hour = 0;
@@ -67,10 +81,12 @@ function passiveStatUpdates(npc: NPC, time: SimTime): NPC {
 
 export function processTick(world: WorldState): { world: WorldState; events: SimEvent[] } {
   const newTime = advanceTime(world.time);
+  const tick = newTime.tick;
   const allEvents: SimEvent[] = [];
   const newTransactions: typeof world.transactions = [];
   let npcs = new Map(world.npcs);
 
+  // ── Core loop: always runs (action selection + stats) ──
   for (const [id, npc] of npcs) {
     const relationships = world.relationships.get(id) ?? [];
     const chosen = chooseAction(npc, newTime, relationships);
@@ -95,7 +111,10 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     updated = spentNPC;
     if (spendTx) newTransactions.push(spendTx);
 
-    updated = { ...updated, memory: decayMemories(updated.memory, newTime.tick) };
+    // Memory decay — throttled
+    if (tick % MEMORY_DECAY_EVERY === 0) {
+      updated = { ...updated, memory: decayMemories(updated.memory, newTime.tick) };
+    }
 
     const actionEvent = createEvent(
       'action',
@@ -120,29 +139,40 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     transactions: [...world.transactions, ...newTransactions],
   };
 
-  const socialEvents = generateSocialEvents(updatedWorld);
-  for (const event of socialEvents) {
-    updatedWorld = applyEffects(updatedWorld, event);
-    allEvents.push(event);
-  }
-
-  for (const [id, npc] of updatedWorld.npcs) {
-    const lifeEvents = rollLifeEvents(npc, newTime);
-    for (const le of lifeEvents) {
-      const effects = le.effects(npc);
-      for (const eff of effects) {
-        if (eff.newMemory) eff.newMemory.tick = newTime.tick;
-        if (eff.newGoal) eff.newGoal.createdAtTick = newTime.tick;
-      }
-      const event = createEvent('life_event', newTime.tick, [id], `${npc.name} ${le.description}`, effects);
+  // ── Social events — throttled ──
+  if (tick % SOCIAL_EVERY === 0) {
+    const socialEvents = generateSocialEvents(updatedWorld);
+    for (const event of socialEvents) {
       updatedWorld = applyEffects(updatedWorld, event);
       allEvents.push(event);
     }
   }
 
+  // ── Life events — throttled ──
+  if (tick % LIFE_EVENTS_EVERY === 1) {
+    for (const [id, npc] of updatedWorld.npcs) {
+      const lifeEvents = rollLifeEvents(npc, newTime);
+      for (const le of lifeEvents) {
+        const effects = le.effects(npc);
+        for (const eff of effects) {
+          if (eff.newMemory) eff.newMemory.tick = newTime.tick;
+          if (eff.newGoal) eff.newGoal.createdAtTick = newTime.tick;
+        }
+        const event = createEvent('life_event', newTime.tick, [id], `${npc.name} ${le.description}`, effects);
+        updatedWorld = applyEffects(updatedWorld, event);
+        allEvents.push(event);
+      }
+    }
+  }
+
+  // ── Rumor pruning — throttled ──
+  const prunedRumors = tick % RUMOR_PRUNE_EVERY === 0
+    ? pruneOldRumors(updatedWorld.rumors, newTime.tick)
+    : updatedWorld.rumors;
+
   updatedWorld = {
     ...updatedWorld,
-    rumors: pruneOldRumors(updatedWorld.rumors, newTime.tick),
+    rumors: prunedRumors,
     eventLog: [...updatedWorld.eventLog, ...allEvents].slice(-200),
     transactions: updatedWorld.transactions.slice(-500),
   };
@@ -150,7 +180,19 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
   return { world: updatedWorld, events: allEvents };
 }
 
+const PERIOD_NAMES: Record<number, string> = {
+  0: 'Night',
+  3: 'Early Morning',
+  6: 'Morning',
+  9: 'Late Morning',
+  12: 'Afternoon',
+  15: 'Late Afternoon',
+  18: 'Evening',
+  21: 'Night',
+};
+
 export function formatTime(time: SimTime): string {
   const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  return `${days[time.day]} ${time.hour.toString().padStart(2, '0')}:00`;
+  const period = PERIOD_NAMES[time.hour] ?? '';
+  return `${days[time.day]} ${time.hour.toString().padStart(2, '0')}:00 — ${period}`;
 }

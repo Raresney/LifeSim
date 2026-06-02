@@ -20,14 +20,40 @@ Technical deep-dive into how the autonomous NPC simulator works.
     +-----+------+
           |
     World State
-    (in-memory Map)
+    (in-memory useRef)
+```
+
+## Application Flow
+
+```
+Landing Page (light theme)
+  ├── Hero section (text + decorative 3D globe)
+  ├── How It Works (3 cards)
+  ├── NPC Carousel (horizontal scroll)
+  ├── Live Timeline Preview (mock events)
+  ├── Relationship Network (interactive SVG)
+  └── CTA → Character Setup
+
+Character Setup (light theme)
+  ├── 10 NPC grid with anime/chibi avatars
+  ├── LoL-style randomize (staggered lock-in)
+  ├── Per-NPC editor (skin, hair, eyes, clothes, accessories)
+  └── Start → Simulation
+
+Simulation (dark theme, sim-dark class)
+  ├── Globe View (globe.gl, auto-rotate, NPC markers)
+  ├── Map View (Leaflet, animated markers, POIs)
+  ├── NPC Sidebar (population list, expandable stats)
+  ├── Timeline Panel (event log with icons)
+  ├── NPC Detail (slide-in, LLM narrative, PDF export)
+  └── Bottom Controls (play/pause, speed, step, time display)
 ```
 
 ## Decision Engine
 
 ### Utility AI — 6-Factor Weighted Scoring
 
-Every tick (1 simulated hour), each NPC evaluates all possible actions:
+Every tick (3 simulated hours), each NPC evaluates all possible actions:
 
 ```typescript
 totalScore = needsScore   * 0.30   // Maps stats to actions (hunger -> eating)
@@ -40,18 +66,30 @@ totalScore = needsScore   * 0.30   // Maps stats to actions (hunger -> eating)
 
 Top 3 scoring actions enter **weighted random selection** — NPCs don't always pick optimally, creating natural unpredictability.
 
-### Tick Pipeline
+### Time System — 8 Cadrane
 
-Each tick executes 7 phases sequentially:
+The simulation day is divided into 8 periods of 3 hours each (`HOURS_PER_TICK = 3`):
 
 ```
-Phase 1: Utility AI    — Each NPC chooses action via weighted scoring
-Phase 2: Passive Stats — Energy drain, hunger increase, activity bonuses
-Phase 3: Economy       — Work income, spending on activities
-Phase 4: Memory Decay  — Short-term 0.05/tick, long-term 0.01/tick
-Phase 5: Social Events — Interactions between NPCs at same location
-Phase 6: Life Events   — Random events (illness, inheritance, job offers)
-Phase 7: Cleanup       — Prune old rumors, cap transactions (500), cap events (200)
+00:00 Night → 03:00 Early Morning → 06:00 Morning → 09:00 Late Morning
+12:00 Afternoon → 15:00 Late Afternoon → 18:00 Evening → 21:00 Night
+```
+
+A full in-game week = 56 ticks (8 ticks/day × 7 days).
+
+### Tick Pipeline with Subsystem Throttling
+
+Not all systems run every tick. Heavy subsystems are staggered to reduce per-tick compute:
+
+```
+Phase 1: Utility AI       — EVERY tick   — Each NPC chooses action via weighted scoring
+Phase 2: Passive Stats    — EVERY tick   — Energy drain, hunger increase, activity bonuses
+Phase 3: Economy          — EVERY tick   — Work income, spending on activities
+Phase 4: Memory Decay     — Every 3rd    — Short-term 0.05/tick, long-term 0.01/tick
+Phase 5: Social Events    — Every 2nd    — Interactions between NPCs at same location
+Phase 6: Life Events      — Every 2nd    — Random events (illness, inheritance, job offers)
+Phase 7: Rumor Pruning    — Every 4th    — Remove expired rumors
+Phase 8: Cleanup          — EVERY tick   — Cap transactions (500), cap events (200)
 ```
 
 All state updates are **immutable** — each phase returns a new world state object.
@@ -126,7 +164,20 @@ NPC D hears: "Victor is rich now" (credibility: 0.4)
 
 - **Personality affects spread**: `social` trait -> higher spread chance, `honest` -> lower distortion
 - **Credibility decays** with each distortion
-- **Old rumors pruned** after N ticks
+- **Old rumors pruned** every 4th tick
+
+## Avatar System — Anime/Chibi SVG
+
+Custom procedural SVG renderer with chibi proportions:
+
+- **Head**: Large (60% of SVG), with radial gradient shading
+- **Eyes**: Anime-style with iris, pupil, sparkle highlights, lid line
+- **Mouth**: Cat-mouth `:3` on neutral, expressive on moods
+- **Hair**: 7 styles (short/long/curly/buzz/ponytail/mohawk/bald) with gradient fills and spiky/flowing shapes
+- **Blush marks**: Subtle pink ellipses on cheeks
+- **Accessories**: Glasses, sunglasses (with shine), earrings, hat (with band), bandana (with dots)
+- **Clothing**: 4 styles with details (hoodie pocket, shirt collar, t-shirt neckline)
+- **Customization**: 8 categories × multiple options = thousands of combinations
 
 ## LLM Integration
 
@@ -207,37 +258,50 @@ const db = drizzle(sql, { schema });
 
 ## Frontend Performance
 
+### Simulation Loop — Engine Decoupled from React
+
+The core performance architecture separates the simulation engine from React rendering:
+
+```
+Engine (runs in useRef)              React (throttled flush)
+┌───────────────────┐                ┌──────────────────┐
+│ setInterval(tick)  │  dirty flag   │ setSnapshot()    │
+│ worldRef.current = │──(250ms)───>  │ triggers render  │
+│   processTick()    │               │ max 4x/sec       │
+│                    │               └──────────────────┘
+│ Zero React calls   │
+│ Pure computation   │
+└───────────────────┘
+```
+
+**Before**: `setState()` called every tick → 10-20 full React re-renders/sec at 10x speed  
+**After**: Engine in `useRef`, UI sync at 250ms → max 4 React renders/sec regardless of speed
+
+### Animation Strategy
+
+| What | Method | Why |
+|------|--------|-----|
+| Stat bars (MiniBar, StatBar) | CSS `transition-[width]` | GPU-composited, zero JS |
+| Goal progress bars | CSS `transition-[width]` | Same — no Framer overhead |
+| Sidebar expand/collapse | CSS `max-height` + `opacity` transition | Cheaper than AnimatePresence |
+| Button hover/active | CSS `hover:scale-[]` + `active:scale-[]` | No Framer Motion instances |
+| Panel slide-in/out | Framer Motion `AnimatePresence` | Complex enter/exit needs JS |
+| Modal backdrop | Framer Motion `motion.div` | Opacity + blur transition |
+| Map NPC positions | `requestAnimationFrame` + ref interpolation | 15fps flush to React |
+| Globe data | Imperative `pointsData()` calls, throttled 1000ms | Avoids React re-render |
+
 ### React Optimization
 
 | Component | Optimization | Why |
 |-----------|-------------|-----|
-| `NPCSidebarItem` | `React.memo()` | 30+ items re-rendered every tick -> only changed ones now |
-| `Avatar` | `React.memo()` | Pure SVG, called 30+ times per render |
+| `NPCSidebarItem` | `React.memo()` | 10 items re-rendered every UI sync |
+| `Avatar` | `React.memo()` | Pure SVG, called 10+ times per render |
 | `Timeline` | `memo()` + `useMemo` filter | Event list doesn't change between ticks |
 | `StatPill` | `memo()` | Static display components |
-| `MiniBar` | `memo()` | Stat bars in sidebar |
-| `BottomButton` | `memo()` | Toolbar buttons |
+| `MiniBar` | `memo()` + CSS transition | Stat bars in sidebar |
+| `BottomButton` | `memo()` + CSS hover | Toolbar buttons |
 | `POIMarkers` | `memo()` | POI locations never change |
-
-### Animation Performance
-
-**MapView (Leaflet)**:
-- RAF loop throttled to ~15fps (66ms flush interval)
-- Positions interpolated in refs, not state
-- `mountedRef` guard prevents updates after unmount (fixes `_leaflet_pos` TypeError)
-- Icon cache (`Map<string, L.DivIcon>`) avoids `renderToStaticMarkup` per frame
-- Deterministic position offsets via character-code hashing (no `Math.random()` jitter)
-
-**GlobeView (globe.gl)**:
-- Point data updates throttled to 1000ms
-- HTML elements (expensive DOM) only recreated on focus change
-- Auto-rotate disabled after cinematic entry to reduce GPU load
-
-### Simulation Hook
-
-- Tick interval: `Math.max(200ms, 1000/speed)` — caps at 5 ticks/sec even at 10x
-- `formattedTime` via `useMemo` (recalculates only on day/hour change)
-- Events dispatched via `queueMicrotask` to avoid nested state updates
+| Callbacks | `useCallback` with functional setState | Prevents child prop changes |
 
 ## Security
 
