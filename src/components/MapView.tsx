@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -10,6 +10,8 @@ import { getLocationCoords, IASI_CENTER, DEFAULT_ZOOM, LOCATION_POINTS } from '.
 import Avatar from './Avatar';
 import 'leaflet/dist/leaflet.css';
 
+const iconCache = new Map<string, L.DivIcon>();
+
 const MOOD_HEX: Record<string, string> = {
   happy: '#22c55e', sad: '#3b82f6', angry: '#ef4444',
   anxious: '#eab308', confident: '#a855f7', bored: '#9ca3af',
@@ -18,6 +20,10 @@ const MOOD_HEX: Record<string, string> = {
 };
 
 function createAvatarIcon(name: string, avatarConfig: AvatarConfig, mood: string, focused: boolean): L.DivIcon {
+  const cacheKey = `${name}_${mood}_${focused}`;
+  const cached = iconCache.get(cacheKey);
+  if (cached) return cached;
+
   const color = MOOD_HEX[mood] ?? '#9ca3af';
   const svgMarkup = renderToStaticMarkup(
     <Avatar config={avatarConfig} size={focused ? 44 : 36} mood={mood} />
@@ -27,7 +33,7 @@ function createAvatarIcon(name: string, avatarConfig: AvatarConfig, mood: string
   const glow = focused ? `box-shadow: 0 0 16px 4px ${color}60;` : '';
   const borderW = focused ? '3px' : '2px';
 
-  return L.divIcon({
+  const icon = L.divIcon({
     className: '',
     html: `
       <div style="
@@ -55,6 +61,8 @@ function createAvatarIcon(name: string, avatarConfig: AvatarConfig, mood: string
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
+  iconCache.set(cacheKey, icon);
+  return icon;
 }
 
 function createPOIIcon(emoji: string, name: string): L.DivIcon {
@@ -86,7 +94,6 @@ interface NPCPosition {
   targetLng: number;
 }
 
-// Fix: Leaflet needs a valid size at mount. Invalidate after a short delay.
 function MapInitializer() {
   const map = useMap();
   useEffect(() => {
@@ -99,7 +106,6 @@ function MapInitializer() {
   return null;
 }
 
-// Pan map to focused NPC
 function FocusHandler({ focusedId, positions }: { focusedId: string | null; positions: Map<string, NPCPosition> }) {
   const map = useMap();
   useEffect(() => {
@@ -112,12 +118,28 @@ function FocusHandler({ focusedId, positions }: { focusedId: string | null; posi
   return null;
 }
 
+const POIMarkers = memo(function POIMarkers() {
+  return (
+    <>
+      {LOCATION_POINTS.map(loc => (
+        <Marker
+          key={loc.id}
+          position={[loc.lat, loc.lng]}
+          icon={createPOIIcon(loc.icon, loc.name)}
+        >
+          <Popup>
+            <div style={{ fontFamily: 'system-ui', fontSize: '12px' }}>
+              <strong>{loc.name}</strong>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+    </>
+  );
+});
+
 function AnimatedMarkers({
-  npcs,
-  avatars,
-  positions,
-  onNPCClick,
-  focusedNPCId,
+  npcs, avatars, positions, onNPCClick, focusedNPCId,
 }: {
   npcs: Map<string, NPC>;
   avatars: Record<string, AvatarConfig>;
@@ -166,7 +188,6 @@ interface Props {
   onZoomOutToGlobe?: () => void;
 }
 
-// Debounced zoom-out detection with visual hint
 function ZoomOutDetector({ onZoomOut }: { onZoomOut: () => void }) {
   const map = useMap();
   const [showHint, setShowHint] = useState(false);
@@ -175,13 +196,11 @@ function ZoomOutDetector({ onZoomOut }: { onZoomOut: () => void }) {
   useEffect(() => {
     const handleZoom = () => {
       const zoom = map.getZoom();
-      // Show hint when approaching threshold
       if (zoom <= 12 && zoom > 10) {
         setShowHint(true);
       } else {
         setShowHint(false);
       }
-      // Trigger transition
       if (zoom <= 10 && !triggeredRef.current) {
         triggeredRef.current = true;
         onZoomOut();
@@ -212,7 +231,7 @@ function ZoomOutDetector({ onZoomOut }: { onZoomOut: () => void }) {
       pointerEvents: 'none',
       animation: 'fade-in 0.3s ease',
     }}>
-      🌍 Zoom out more to return to globe view
+      Zoom out more to return to globe view
     </div>
   );
 }
@@ -220,6 +239,52 @@ function ZoomOutDetector({ onZoomOut }: { onZoomOut: () => void }) {
 export default function MapView({ npcs, avatars, onNPCClick, focusedNPCId, onZoomOutToGlobe }: Props) {
   const [positions, setPositions] = useState<Map<string, NPCPosition>>(new Map());
   const animFrameRef = useRef<number | null>(null);
+  const positionsRef = useRef<Map<string, NPCPosition>>(new Map());
+  const lastFlushRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  positionsRef.current = positions;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  const startAnimation = useCallback(() => {
+    if (animFrameRef.current || !mountedRef.current) return;
+    const animate = (now: number) => {
+      if (!mountedRef.current) { animFrameRef.current = null; return; }
+      const current = positionsRef.current;
+      let anyMoving = false;
+      const next = new Map(current);
+      for (const [id, pos] of next) {
+        const dLat = pos.targetLat - pos.lat;
+        const dLng = pos.targetLng - pos.lng;
+        if (Math.abs(dLat) > 0.00001 || Math.abs(dLng) > 0.00001) {
+          next.set(id, { ...pos, lat: pos.lat + dLat * 0.15, lng: pos.lng + dLng * 0.15 });
+          anyMoving = true;
+        }
+      }
+      if (anyMoving) {
+        positionsRef.current = next;
+        if (now - lastFlushRef.current > 66) {
+          lastFlushRef.current = now;
+          setPositions(next);
+        }
+        animFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        setPositions(next);
+        animFrameRef.current = null;
+      }
+    };
+    animFrameRef.current = requestAnimationFrame(animate);
+  }, []);
 
   useEffect(() => {
     setPositions(prev => {
@@ -235,34 +300,8 @@ export default function MapView({ npcs, avatars, onNPCClick, focusedNPCId, onZoo
       }
       return next;
     });
-  }, [npcs]);
-
-  useEffect(() => {
-    const animate = () => {
-      setPositions(prev => {
-        const next = new Map(prev);
-        let changed = false;
-        for (const [id, pos] of next) {
-          const dLat = pos.targetLat - pos.lat;
-          const dLng = pos.targetLng - pos.lng;
-          if (Math.abs(dLat) > 0.00001 || Math.abs(dLng) > 0.00001) {
-            next.set(id, {
-              ...pos,
-              lat: pos.lat + dLat * 0.08,
-              lng: pos.lng + dLng * 0.08,
-            });
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-      animFrameRef.current = requestAnimationFrame(animate);
-    };
-    animFrameRef.current = requestAnimationFrame(animate);
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, []);
+    startAnimation();
+  }, [npcs, startAnimation]);
 
   return (
     <div style={{ height: '100%', width: '100%' }}>
@@ -277,21 +316,7 @@ export default function MapView({ npcs, avatars, onNPCClick, focusedNPCId, onZoo
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
-
-        {LOCATION_POINTS.map(loc => (
-          <Marker
-            key={loc.id}
-            position={[loc.lat, loc.lng]}
-            icon={createPOIIcon(loc.icon, loc.name)}
-          >
-            <Popup>
-              <div style={{ fontFamily: 'system-ui', fontSize: '12px' }}>
-                <strong>{loc.name}</strong>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
+        <POIMarkers />
         <AnimatedMarkers
           npcs={npcs}
           avatars={avatars}

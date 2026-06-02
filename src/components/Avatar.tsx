@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { AvatarConfig } from '../engine/avatar';
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   mood?: string;
 }
 
-export default function Avatar({ config, size = 80, mood }: Props) {
+export default memo(function Avatar({ config, size = 80, mood }: Props) {
   const s = size;
   const cx = s / 2;
   const cy = s / 2;
@@ -72,7 +73,7 @@ export default function Avatar({ config, size = 80, mood }: Props) {
       <AccessoryRender cx={cx} cy={cy} headR={headR} eyeY={eyeY} spacing={eyeSpacing} type={accessory} />
     </svg>
   );
-}
+});
 
 function ClothingShape({ cx, cy, headR, s, color, style }: { cx: number; cy: number; headR: number; s: number; color: string; style: string }) {
   const topY = cy + headR * 1.05;

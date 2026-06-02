@@ -16,7 +16,7 @@ export function createEvent(
   effects: EventEffect[],
 ): SimEvent {
   return {
-    id: `evt_${++eventIdCounter}`,
+    id: `evt_${tick}_${++eventIdCounter}`,
     type,
     tick,
     involvedNPCs,
@@ -94,7 +94,6 @@ export function applyEffects(world: WorldState, event: SimEvent): WorldState {
     npcs.set(effect.targetNPCId, updated);
   }
 
-  // Generate rumor from interesting events
   const newRumor = generateRumorFromEvent(event, event.tick);
   if (newRumor) {
     newRumors.push(newRumor);
@@ -109,13 +108,12 @@ export function applyEffects(world: WorldState, event: SimEvent): WorldState {
   };
 }
 
-// Generate interaction events between NPCs at the same location
-export function generateSocialEvents(world: WorldState): SimEvent[] {
+export function generateSocialEvents(worldParam: WorldState): SimEvent[] {
+  let world = worldParam;
   const events: SimEvent[] = [];
   const npcArray = Array.from(world.npcs.values());
   const tick = world.time.tick;
 
-  // Group NPCs by location
   const byLocation = new Map<string, NPC[]>();
   for (const npc of npcArray) {
     if (npc.currentActivity === 'sleeping') continue;
@@ -127,10 +125,9 @@ export function generateSocialEvents(world: WorldState): SimEvent[] {
   for (const [location, npcsHere] of byLocation) {
     if (npcsHere.length < 2) continue;
 
-    // Each pair has a chance to interact
     for (let i = 0; i < npcsHere.length; i++) {
       for (let j = i + 1; j < npcsHere.length; j++) {
-        if (Math.random() > 0.3) continue; // 30% chance of interaction
+        if (Math.random() > 0.3) continue;
 
         const a = npcsHere[i];
         const b = npcsHere[j];
@@ -142,16 +139,15 @@ export function generateSocialEvents(world: WorldState): SimEvent[] {
       }
     }
 
-    // Rumor spreading at social locations
     if (['cafe', 'bar', 'park'].includes(location)) {
       for (const npc of npcsHere) {
-        for (const rumor of world.rumors) {
+        for (let ri = 0; ri < world.rumors.length; ri++) {
+          const rumor = world.rumors[ri];
           if (shouldSpreadRumor(npc, rumor)) {
             const target = npcsHere.find(n => n.id !== npc.id && !rumor.spreadBy.includes(n.id));
             if (target) {
               const spread = spreadRumor(rumor, npc.id, npc.personality);
-              const idx = world.rumors.findIndex(r => r.id === rumor.id);
-              if (idx >= 0) world.rumors[idx] = spread;
+              world = { ...world, rumors: world.rumors.map((r, i) => i === ri ? spread : r) };
 
               events.push(createEvent(
                 'rumor',
@@ -192,12 +188,10 @@ function generateInteraction(
   const affinity = ((relA?.affection ?? 0) + (relB?.affection ?? 0)) / 2;
   const trust = ((relA?.trust ?? 0) + (relB?.trust ?? 0)) / 2;
 
-  // Positive interaction
   if (affinity > 0 || Math.random() > 0.4) {
     const isSocialA = a.currentActivity === 'socializing' || a.currentActivity === 'flirting';
     const isSocialB = b.currentActivity === 'socializing' || b.currentActivity === 'flirting';
 
-    // Flirting chance
     if ((isSocialA || isSocialB) && affinity > 20 && Math.random() < 0.15) {
       return createEvent('social', tick, [a.id, b.id],
         `${a.name} and ${b.name} flirted at the ${location}`,
@@ -232,7 +226,6 @@ function generateInteraction(
       );
     }
 
-    // Friendly chat
     return createEvent('social', tick, [a.id, b.id],
       `${a.name} and ${b.name} had a nice chat at the ${location}`,
       [
@@ -266,7 +259,6 @@ function generateInteraction(
     );
   }
 
-  // Negative interaction / argument
   if (affinity < -10 || (a.currentMood === 'angry' || b.currentMood === 'angry')) {
     return createEvent('conflict', tick, [a.id, b.id],
       `${a.name} and ${b.name} had an argument at the ${location}`,

@@ -1,5 +1,6 @@
 'use client';
 
+import { memo, useMemo } from 'react';
 import { SimEvent } from '../engine/types';
 
 const TYPE_STYLE: Record<string, { color: string; icon: string }> = {
@@ -17,9 +18,11 @@ interface Props {
   events: SimEvent[];
 }
 
-export default function Timeline({ events }: Props) {
-  const interesting = events.filter(e => e.type !== 'action');
-  const display = interesting.length > 0 ? interesting.slice(-30) : events.slice(-5);
+export default memo(function Timeline({ events }: Props) {
+  const display = useMemo(() => {
+    const interesting = events.filter(e => e.type !== 'action');
+    return interesting.length > 0 ? interesting.slice(-30) : events.slice(-5);
+  }, [events]);
 
   return (
     <div className="space-y-1.5">
@@ -37,4 +40,4 @@ export default function Timeline({ events }: Props) {
       })}
     </div>
   );
-}
+});

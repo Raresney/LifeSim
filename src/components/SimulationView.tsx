@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import dynamic from 'next/dynamic';
 import { NPC } from '../engine/types';
 import { AvatarConfig } from '../engine/avatar';
@@ -32,6 +32,84 @@ const ACTIVITY_ICON: Record<string, string> = {
   scheming: '🤫', helping: '🤝', gossiping: '👀',
 };
 
+function getMoodColor(mood: string): string {
+  return mood === 'happy' || mood === 'excited' || mood === 'content'
+    ? 'bg-green-400' : mood === 'angry' || mood === 'stressed'
+    ? 'bg-red-400' : mood === 'sad' || mood === 'anxious'
+    ? 'bg-yellow-400' : 'bg-zinc-500';
+}
+
+const NPCSidebarItem = memo(function NPCSidebarItem({
+  npc, avatar, isFocused, onFocus, onUnfocus, onDetail,
+}: {
+  npc: NPC;
+  avatar: AvatarConfig;
+  isFocused: boolean;
+  onFocus: (npc: NPC) => void;
+  onUnfocus: () => void;
+  onDetail: (npc: NPC) => void;
+}) {
+  const moodColor = getMoodColor(npc.currentMood);
+
+  return (
+    <button
+      onClick={() => isFocused ? onUnfocus() : onFocus(npc)}
+      onDoubleClick={() => onDetail(npc)}
+      className={`w-full text-left px-3 py-2.5 mx-1 my-0.5 rounded-xl transition-all duration-200 group ${
+        isFocused
+          ? 'bg-blue-500/10 border border-blue-500/20'
+          : 'hover:bg-zinc-800/60 border border-transparent'
+      }`}
+      style={{ width: 'calc(100% - 8px)' }}
+    >
+      <div className="flex items-center gap-3">
+        <div className="relative flex-shrink-0">
+          <div className={`absolute -inset-0.5 rounded-lg ${isFocused ? 'ring-2 ring-blue-400/40' : ''}`} />
+          <Avatar config={avatar} size={36} mood={npc.currentMood} />
+          <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950 ${moodColor}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[13px] font-medium truncate ${isFocused ? 'text-blue-300' : 'text-zinc-200 group-hover:text-white'}`}>
+              {npc.name}
+            </span>
+            {isFocused && (
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 uppercase tracking-wider font-semibold">
+                focus
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wide">{npc.occupation}</span>
+            <span className="text-zinc-700">·</span>
+            <span className="text-[10px] text-zinc-600">{MOOD_LABEL[npc.currentMood] ?? npc.currentMood}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+          <span className="text-base leading-none">
+            {ACTIVITY_ICON[npc.currentActivity] ?? '?'}
+          </span>
+          <span className="text-[8px] text-zinc-600 capitalize leading-none">
+            {npc.currentActivity.length > 8 ? npc.currentActivity.slice(0, 7) + '.' : npc.currentActivity}
+          </span>
+        </div>
+      </div>
+      {isFocused && (
+        <div className="mt-2.5 ml-12 space-y-1.5">
+          <MiniBar label="Energy" value={npc.stats.energy} color="#eab308" />
+          <MiniBar label="Health" value={npc.stats.health} color="#ef4444" />
+          <MiniBar label="Happy" value={npc.stats.happiness} color="#22c55e" />
+          <MiniBar label="Stress" value={npc.stats.stress} color="#f97316" />
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[9px] text-zinc-500">$ {npc.stats.money}</span>
+            <span className="text-[9px] text-zinc-500">{100 - npc.stats.hunger}%</span>
+          </div>
+        </div>
+      )}
+    </button>
+  );
+});
+
 type ViewMode = 'globe' | 'map' | 'transitioning-to-map' | 'transitioning-to-globe';
 
 export default function SimulationView({ avatars, onBack }: Props) {
@@ -43,7 +121,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('globe');
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const npcs = Array.from(world.npcs.values());
+  const npcs = useMemo(() => Array.from(world.npcs.values()), [world.npcs]);
   const viewing = focusedNPC ? (world.npcs.get(focusedNPC.id) ?? focusedNPC) : null;
 
   // Smooth transition: globe → map
@@ -146,63 +224,37 @@ export default function SimulationView({ avatars, onBack }: Props) {
       </div>
 
       {/* ── Left Sidebar: Population ── */}
-      <div className={`absolute top-16 left-3 bottom-20 z-20 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0'}`}>
-        <div className={`h-full bg-zinc-900/85 backdrop-blur-md border border-zinc-700/50 rounded-2xl overflow-hidden flex flex-col ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      <div className={`absolute top-16 left-3 bottom-20 z-20 transition-all duration-300 ${sidebarOpen ? 'w-72' : 'w-0'}`}>
+        <div className={`h-full bg-zinc-950/90 backdrop-blur-xl border border-zinc-800/60 rounded-2xl overflow-hidden flex flex-col ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50 bg-zinc-900/50">
             <div className="flex items-center gap-2">
-              <span className="text-zinc-400 text-sm">👥</span>
-              <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Population ({npcs.length})</span>
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-[0.15em]">Population</span>
+              <span className="text-[10px] text-zinc-600 font-mono">{npcs.length}</span>
             </div>
-            <button onClick={() => setSidebarOpen(false)} className="text-zinc-500 hover:text-zinc-300 text-sm">&times;</button>
+            <button onClick={() => setSidebarOpen(false)} className="text-zinc-600 hover:text-zinc-300 text-sm transition-colors">&times;</button>
           </div>
 
           {/* NPC List */}
-          <div className="flex-1 overflow-y-auto">
-            {npcs.map(npc => {
-              const isFocused = focusedNPC?.id === npc.id;
-              return (
-                <button
-                  key={npc.id}
-                  onClick={() => {
-                    if (isFocused) {
-                      transitionToGlobe();
-                    } else {
-                      transitionToMap(npc);
-                    }
-                  }}
-                  onDoubleClick={() => setSelectedNPC(npc)}
-                  className={`w-full text-left px-4 py-3 border-b border-zinc-800/50 transition-colors ${
-                    isFocused ? 'bg-zinc-700/40' : 'hover:bg-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar config={avatars[npc.id]} size={32} mood={npc.currentMood} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-zinc-200 truncate">{npc.name}</div>
-                      <div className="text-[10px] text-zinc-500 uppercase tracking-wide">{npc.occupation}</div>
-                    </div>
-                    {/* Activity indicator */}
-                    <span className="text-sm opacity-70">
-                      {ACTIVITY_ICON[npc.currentActivity] ?? '❓'}
-                    </span>
-                  </div>
-                  {isFocused && (
-                    <div className="mt-2 ml-11 space-y-1">
-                      <MiniBar label="Energy" value={npc.stats.energy} color="#eab308" />
-                      <MiniBar label="Health" value={npc.stats.health} color="#ef4444" />
-                      <MiniBar label="Happy" value={npc.stats.happiness} color="#22c55e" />
-                      <MiniBar label="Stress" value={npc.stats.stress} color="#f97316" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+          <div className="flex-1 overflow-y-auto py-1">
+            {npcs.map(npc => (
+              <NPCSidebarItem
+                key={npc.id}
+                npc={npc}
+                avatar={avatars[npc.id]}
+                isFocused={focusedNPC?.id === npc.id}
+                onFocus={transitionToMap}
+                onUnfocus={transitionToGlobe}
+                onDetail={setSelectedNPC}
+              />
+            ))}
           </div>
 
-          {/* Footer hint */}
-          <div className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-600 text-center">
-            Click to focus · Double-click for details
+          {/* Footer */}
+          <div className="px-4 py-2 border-t border-zinc-800/50 bg-zinc-900/30 flex items-center justify-between">
+            <span className="text-[9px] text-zinc-600">Click to focus</span>
+            <span className="text-[9px] text-zinc-600">Double-click for details</span>
           </div>
         </div>
       </div>
@@ -339,7 +391,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
               <button onClick={() => setShowTimeline(false)} className="text-zinc-500 hover:text-zinc-300 text-sm">&times;</button>
             </div>
             <div className="flex-1 overflow-y-auto p-3">
-              <Timeline events={world.eventLog.slice(-50)} />
+              <Timeline events={recentEvents} />
             </div>
           </div>
         </div>
@@ -359,25 +411,25 @@ export default function SimulationView({ avatars, onBack }: Props) {
   );
 }
 
-function StatPill({ icon, value, color }: { icon: string; value: string; color: string }) {
+const StatPill = memo(function StatPill({ icon, value, color }: { icon: string; value: string; color: string }) {
   return (
     <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-xl px-3 py-1.5 flex items-center gap-1.5">
       <span className="text-xs">{icon}</span>
       <span className={`text-xs font-semibold ${color}`}>{value}</span>
     </div>
   );
-}
+});
 
-function BottomButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
+const BottomButton = memo(function BottomButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-0.5">
       <span className="text-lg">{icon}</span>
       <span className={`text-[10px] ${active ? 'text-blue-400' : 'text-zinc-500'}`}>{label}</span>
     </button>
   );
-}
+});
 
-function MiniBar({ label, value, color }: { label: string; value: number; color: string }) {
+const MiniBar = memo(function MiniBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-[9px] text-zinc-500 w-10">{label}</span>
@@ -387,4 +439,4 @@ function MiniBar({ label, value, color }: { label: string; value: number; color:
       <span className="text-[9px] text-zinc-500 w-5 text-right">{value}</span>
     </div>
   );
-}
+});

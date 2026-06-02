@@ -1,21 +1,20 @@
 import { Memory, NPCMemory, SimTime } from './types';
 
 const SHORT_TERM_LIMIT = 20;
-const DECAY_RATE = 0.05;          // per tick
-const LONG_TERM_THRESHOLD = 7;    // emotional weight to auto-promote
+const DECAY_RATE = 0.05;
+const LONG_TERM_THRESHOLD = 7;
 
 let memoryIdCounter = 0;
 
 export function createMemory(
   partial: Omit<Memory, 'id'>
 ): Memory {
-  return { ...partial, id: `mem_${++memoryIdCounter}` };
+  return { ...partial, id: `mem_${partial.tick}_${++memoryIdCounter}` };
 }
 
 export function addMemory(npcMemory: NPCMemory, memory: Memory): NPCMemory {
   const shortTerm = [memory, ...npcMemory.shortTerm];
 
-  // Auto-promote high emotional weight to long-term
   if (memory.emotionalWeight >= LONG_TERM_THRESHOLD || memory.isLongTerm) {
     return {
       shortTerm: shortTerm.slice(0, SHORT_TERM_LIMIT),
@@ -32,7 +31,6 @@ export function addMemory(npcMemory: NPCMemory, memory: Memory): NPCMemory {
 export function decayMemories(npcMemory: NPCMemory, currentTick: number): NPCMemory {
   const decayOne = (m: Memory): Memory => {
     if (m.isLongTerm) {
-      // Long-term memories decay 5x slower
       const age = currentTick - m.tick;
       const decayed = m.emotionalWeight - (age * DECAY_RATE * 0.2);
       return { ...m, emotionalWeight: Math.max(1, decayed) };

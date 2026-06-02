@@ -8,7 +8,6 @@ export interface MapLocation {
   icon: string;
 }
 
-// Real Iași coordinates for each location type
 export const LOCATION_POINTS: MapLocation[] = [
   { id: 'work',       name: 'Palas Campus (Offices)',     lat: 47.1555, lng: 27.5890, icon: '🏢' },
   { id: 'cafe',       name: 'Cafeneaua de la Teatru',     lat: 47.1585, lng: 27.5870, icon: '☕' },
@@ -20,7 +19,6 @@ export const LOCATION_POINTS: MapLocation[] = [
   { id: 'hospital',   name: 'Spitalul Sf. Spiridon',     lat: 47.1620, lng: 27.5840, icon: '🏥' },
 ];
 
-// Each NPC has their own "home" location spread around the city
 export const NPC_HOMES: Record<string, { lat: number; lng: number; name: string }> = {
   npc_1:  { lat: 47.1650, lng: 27.5750, name: 'Apartament Copou' },
   npc_2:  { lat: 47.1530, lng: 27.5950, name: 'Apartament Podu Roș' },
@@ -34,6 +32,17 @@ export const NPC_HOMES: Record<string, { lat: number; lng: number; name: string 
   npc_10: { lat: 47.1460, lng: 27.5880, name: 'Casă CUG' },
 };
 
+function deterministicOffset(npcId: string, locationId: string): { dLat: number; dLng: number } {
+  let hash = 0;
+  const key = `${npcId}:${locationId}`;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  const dLat = ((hash & 0xFFFF) / 0xFFFF - 0.5) * 0.001;
+  const dLng = (((hash >> 16) & 0xFFFF) / 0xFFFF - 0.5) * 0.001;
+  return { dLat, dLng };
+}
+
 export function getLocationCoords(
   locationId: Location,
   npcId: string,
@@ -43,26 +52,25 @@ export function getLocationCoords(
   }
 
   if (locationId === 'traveling') {
-    // Traveling = random offset from current position (will be interpolated in map)
     const home = NPC_HOMES[npcId] ?? { lat: 47.1600, lng: 27.5850 };
+    const offset = deterministicOffset(npcId, 'traveling');
     return {
-      lat: home.lat + (Math.random() - 0.5) * 0.01,
-      lng: home.lng + (Math.random() - 0.5) * 0.01,
+      lat: home.lat + offset.dLat * 10,
+      lng: home.lng + offset.dLng * 10,
     };
   }
 
   const point = LOCATION_POINTS.find(l => l.id === locationId);
   if (point) {
-    // Add small random offset so NPCs don't stack exactly
+    const offset = deterministicOffset(npcId, locationId);
     return {
-      lat: point.lat + (Math.random() - 0.5) * 0.001,
-      lng: point.lng + (Math.random() - 0.5) * 0.001,
+      lat: point.lat + offset.dLat,
+      lng: point.lng + offset.dLng,
     };
   }
 
-  return { lat: 47.1600, lng: 27.5850 }; // city center fallback
+  return { lat: 47.1600, lng: 27.5850 };
 }
 
-// Iași city center for initial map view
 export const IASI_CENTER = { lat: 47.1585, lng: 27.5845 };
 export const DEFAULT_ZOOM = 14;

@@ -19,7 +19,6 @@ const ACTIVITY_EMOJI: Record<string, string> = {
   scheming: '🤫', helping: '🤝', gossiping: '👀',
 };
 
-// Romania's ISO numeric code in the world-atlas dataset
 const ROMANIA_ID = '642';
 
 interface Props {
@@ -54,13 +53,9 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
     for (const loc of LOCATION_POINTS) {
       points.push({
         id: `poi_${loc.id}`,
-        lat: loc.lat,
-        lng: loc.lng,
-        name: loc.name,
-        color: 'rgba(59,130,246,0.7)',
-        size: 0.06,
-        isPOI: true,
-        emoji: loc.icon,
+        lat: loc.lat, lng: loc.lng, name: loc.name,
+        color: 'rgba(59,130,246,0.7)', size: 0.06,
+        isPOI: true, emoji: loc.icon,
       });
     }
 
@@ -68,10 +63,7 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       const coords = getLocationCoords(npc.currentLocation, id);
       const focused = id === focusedNPCId;
       points.push({
-        id,
-        lat: coords.lat,
-        lng: coords.lng,
-        name: npc.name,
+        id, lat: coords.lat, lng: coords.lng, name: npc.name,
         color: MOOD_HEX[npc.currentMood] ?? '#9ca3af',
         size: focused ? 0.12 : 0.08,
         isPOI: false,
@@ -88,7 +80,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
 
     let countryFeatures: any[] = [];
 
-    // Load country borders GeoJSON
     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(r => r.json())
       .then(topology => {
@@ -109,8 +100,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
         .showGraticules(false)
         .pointOfView({ lat: 30, lng: 10, altitude: 2.5 }, 0)
-
-        // Country polygons — Romania highlighted, others subtle
         .polygonsData(countryFeatures)
         .polygonCapColor((d: any) => {
           if (d.id === ROMANIA_ID) return 'rgba(59, 130, 246, 0.12)';
@@ -122,8 +111,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
           return 'rgba(255,255,255,0.15)';
         })
         .polygonAltitude((d: any) => d.id === ROMANIA_ID ? 0.004 : 0.001)
-
-        // NPC & POI points
         .pointsData(getPoints())
         .pointLat('lat')
         .pointLng('lng')
@@ -144,8 +131,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         .onPointClick((point: any) => {
           if (point.npc) onNPCClick(point.npc);
         })
-
-        // HTML markers for NPCs — pill-style with pulse animation
         .htmlElementsData(getPoints().filter(p => !p.isPOI))
         .htmlElement((d: any) => {
           const el = document.createElement('div');
@@ -177,22 +162,17 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
           return el;
         })
         .htmlAltitude(0.018)
-
-        // Atmosphere — warm bright glow
         .atmosphereColor('#87CEEB')
         .atmosphereAltitude(0.25)
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight);
 
-      // Material tweaks
       const globeMat = globe.globeMaterial();
       globeMat.bumpScale = 3;
 
-      // Renderer tweaks
       const renderer = globe.renderer();
       renderer.domElement.style.outline = 'none';
 
-      // Inject pulse animation CSS
       if (!document.getElementById('globe-pulse-css')) {
         const style = document.createElement('style');
         style.id = 'globe-pulse-css';
@@ -208,7 +188,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       globeRef.current = globe;
       setMounted(true);
 
-      // Controls
       const controls = globe.controls();
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.3;
@@ -219,7 +198,6 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       controls.rotateSpeed = 0.6;
       controls.zoomSpeed = 0.8;
 
-      // Detect zoom-in: debounced, triggers once until reset
       controls.addEventListener('change', () => {
         if (!globeRef.current || !onZoomIn || zoomTriggeredRef.current) return;
         const pov = globeRef.current.pointOfView();
@@ -229,13 +207,11 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
         }
       });
 
-      // Cinematic entry: start zoomed out, fly to Romania in stages
       setTimeout(() => {
         globe.pointOfView(
           { lat: IASI_CENTER.lat, lng: IASI_CENTER.lng, altitude: 0.5 },
-          3000 // slower, cinematic
+          3000
         );
-        // Stop auto-rotate when close to target
         setTimeout(() => {
           controls.autoRotate = false;
         }, 3200);
@@ -251,20 +227,44 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
     };
   }, []);
 
-  // Reset zoom trigger when component re-mounts (back from map)
   useEffect(() => {
     zoomTriggeredRef.current = false;
   }, []);
 
-  // Update points when data changes
+  const lastUpdateRef = useRef(0);
+  const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevFocusRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!globeRef.current) return;
-    const points = getPoints();
-    globeRef.current.pointsData(points);
-    globeRef.current.htmlElementsData(points.filter((p: GlobePoint) => !p.isPOI));
+
+    const doUpdate = () => {
+      if (!globeRef.current) return;
+      const points = getPoints();
+      globeRef.current.pointsData(points);
+      const focusChanged = prevFocusRef.current !== focusedNPCId;
+      if (focusChanged) {
+        prevFocusRef.current = focusedNPCId;
+        globeRef.current.htmlElementsData(points.filter((p: GlobePoint) => !p.isPOI));
+      }
+      lastUpdateRef.current = Date.now();
+    };
+
+    const now = Date.now();
+    const elapsed = now - lastUpdateRef.current;
+
+    if (elapsed >= 1000) {
+      doUpdate();
+    } else {
+      if (pendingUpdateRef.current) clearTimeout(pendingUpdateRef.current);
+      pendingUpdateRef.current = setTimeout(doUpdate, 1000 - elapsed);
+    }
+
+    return () => {
+      if (pendingUpdateRef.current) clearTimeout(pendingUpdateRef.current);
+    };
   }, [npcs, focusedNPCId, getPoints]);
 
-  // Handle resize
   useEffect(() => {
     const handleResize = () => {
       if (!globeRef.current || !containerRef.current) return;

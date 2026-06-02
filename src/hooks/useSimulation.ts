@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { WorldState, SimEvent } from '../engine/types';
 import { createWorld } from '../engine/world';
 import { processTick, formatTime } from '../engine/tick';
@@ -13,7 +13,6 @@ export function useSimulation() {
   const tick = useCallback(() => {
     setWorld(prev => {
       const { world: next, events } = processTick(prev);
-      // Schedule event update outside of setWorld to avoid nested state updates
       queueMicrotask(() => setRecentEvents(events));
       return next;
     });
@@ -37,7 +36,14 @@ export function useSimulation() {
     setRecentEvents([]);
   }, []);
 
-  // Auto-tick when running
+  const formattedTime = useMemo(
+    () => formatTime(world.time),
+    [world.time.day, world.time.hour]
+  );
+
+  const worldRef = useRef(world);
+  worldRef.current = world;
+
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -45,7 +51,7 @@ export function useSimulation() {
     }
 
     if (world.isRunning) {
-      const ms = Math.max(100, 1000 / world.speed);
+      const ms = Math.max(200, 1000 / world.speed);
       intervalRef.current = setInterval(tick, ms);
     }
 
@@ -57,7 +63,7 @@ export function useSimulation() {
   return {
     world,
     recentEvents,
-    formattedTime: formatTime(world.time),
+    formattedTime,
     tick,
     play,
     pause,

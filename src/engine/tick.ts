@@ -9,7 +9,7 @@ import { pruneOldRumors } from './rumors';
 export function advanceTime(time: SimTime): SimTime {
   let { day, hour, tick } = time;
   tick += 1;
-  hour += 1; // each tick = 1 hour simulated
+  hour += 1;
 
   if (hour >= 24) {
     hour = 0;
@@ -24,44 +24,36 @@ function passiveStatUpdates(npc: NPC, time: SimTime): NPC {
   const { hour } = time;
   let { energy, hunger, stress, happiness, health } = npc.stats;
 
-  // Hunger always increases
   hunger = Math.min(100, hunger + 3);
 
-  // Sleeping restores energy, reduces stress
   if (npc.currentActivity === 'sleeping') {
     energy = Math.min(100, energy + 15);
     stress = Math.max(0, stress - 5);
     health = Math.min(100, health + 2);
   } else {
-    // Awake activities drain energy
     energy = Math.max(0, energy - 3);
   }
 
-  // Eating reduces hunger
   if (npc.currentActivity === 'eating') {
     hunger = Math.max(0, hunger - 40);
     happiness = Math.min(100, happiness + 3);
   }
 
-  // Exercise boosts health, costs energy
   if (npc.currentActivity === 'exercising') {
     health = Math.min(100, health + 5);
     energy = Math.max(0, energy - 8);
     stress = Math.max(0, stress - 8);
   }
 
-  // Socializing boosts happiness
   if (npc.currentActivity === 'socializing' || npc.currentActivity === 'entertaining') {
     happiness = Math.min(100, happiness + 5);
     stress = Math.max(0, stress - 3);
   }
 
-  // High stress degrades health slowly
   if (stress > 70) {
     health = Math.max(0, health - 1);
   }
 
-  // Very hungry = stress and unhappiness
   if (hunger > 80) {
     stress = Math.min(100, stress + 5);
     happiness = Math.max(0, happiness - 3);
@@ -76,9 +68,9 @@ function passiveStatUpdates(npc: NPC, time: SimTime): NPC {
 export function processTick(world: WorldState): { world: WorldState; events: SimEvent[] } {
   const newTime = advanceTime(world.time);
   const allEvents: SimEvent[] = [];
+  const newTransactions: typeof world.transactions = [];
   let npcs = new Map(world.npcs);
 
-  // Phase 1: Each NPC chooses an action via Utility AI
   for (const [id, npc] of npcs) {
     const relationships = world.relationships.get(id) ?? [];
     const chosen = chooseAction(npc, newTime, relationships);
@@ -89,30 +81,22 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
       currentLocation: chosen.action.location,
     };
 
-    // Phase 2: Apply passive stat changes
     updated = passiveStatUpdates(updated, newTime);
 
-    // Phase 3: Economic effects
     if (chosen.action.activity === 'working') {
       const { npc: workedNPC, transaction } = processWorkSession(updated, newTime.tick);
       updated = workedNPC;
-      if (transaction) {
-        world.transactions.push(transaction);
-      }
+      if (transaction) newTransactions.push(transaction);
     }
 
     const { npc: spentNPC, transaction: spendTx } = processSpending(
       updated, chosen.action.activity, newTime.tick
     );
     updated = spentNPC;
-    if (spendTx) {
-      world.transactions.push(spendTx);
-    }
+    if (spendTx) newTransactions.push(spendTx);
 
-    // Phase 4: Decay memories
     updated = { ...updated, memory: decayMemories(updated.memory, newTime.tick) };
 
-    // Create action event
     const actionEvent = createEvent(
       'action',
       newTime.tick,
@@ -133,21 +117,19 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     ...world,
     time: newTime,
     npcs,
+    transactions: [...world.transactions, ...newTransactions],
   };
 
-  // Phase 5: Social interactions between NPCs at same location
   const socialEvents = generateSocialEvents(updatedWorld);
   for (const event of socialEvents) {
     updatedWorld = applyEffects(updatedWorld, event);
     allEvents.push(event);
   }
 
-  // Phase 6: Random life events
   for (const [id, npc] of updatedWorld.npcs) {
     const lifeEvents = rollLifeEvents(npc, newTime);
     for (const le of lifeEvents) {
       const effects = le.effects(npc);
-      // Fix tick in memories
       for (const eff of effects) {
         if (eff.newMemory) eff.newMemory.tick = newTime.tick;
         if (eff.newGoal) eff.newGoal.createdAtTick = newTime.tick;
@@ -158,11 +140,11 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     }
   }
 
-  // Phase 7: Prune old rumors
   updatedWorld = {
     ...updatedWorld,
     rumors: pruneOldRumors(updatedWorld.rumors, newTime.tick),
-    eventLog: [...updatedWorld.eventLog, ...allEvents].slice(-200), // keep last 200 events
+    eventLog: [...updatedWorld.eventLog, ...allEvents].slice(-200),
+    transactions: updatedWorld.transactions.slice(-500),
   };
 
   return { world: updatedWorld, events: allEvents };
