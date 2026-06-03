@@ -6,6 +6,7 @@ import { NPC, Relationship } from '../engine/types';
 import { AvatarConfig } from '../engine/avatar';
 import { summarizeMemoryForLLM } from '../engine/memory';
 import Avatar from './Avatar';
+import { Avatar3DInline } from './Character3D';
 
 const MOOD_HEX: Record<string, string> = {
   happy: '#22c55e', sad: '#3b82f6', angry: '#ef4444',
@@ -233,7 +234,7 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                     boxShadow: `0 0 24px ${moodColor}15`,
                   }}
                 >
-                  <Avatar config={avatar} size={56} mood={npc.currentMood} />
+                  <Avatar3DInline config={avatar} size={56} mood={npc.currentMood} occupation={npc.occupation} />
                 </div>
                 <div
                   className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-zinc-950"

@@ -9,6 +9,7 @@ import { useSimulation } from '../hooks/useSimulation';
 import NPCDetail from './NPCDetail';
 import Timeline from './Timeline';
 import Avatar from './Avatar';
+import { Avatar3DInline } from './Character3D';
 
 const GlobeView = dynamic(() => import('./GlobeView'), { ssr: false });
 const MapView = dynamic(() => import('./MapView'), { ssr: false });
@@ -83,7 +84,7 @@ const NPCSidebarItem = memo(function NPCSidebarItem({
       <div className="flex items-center gap-3">
         <div className="relative flex-shrink-0">
           <div className={`absolute -inset-0.5 rounded-lg transition-all duration-300 ${isFocused ? 'ring-2 ring-blue-400/30' : ''}`} />
-          <Avatar config={avatar} size={36} mood={npc.currentMood} />
+          <Avatar3DInline config={avatar} size={36} mood={npc.currentMood} occupation={npc.occupation} />
           <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950 ${moodColor} shadow-sm ${moodGlow}`} />
         </div>
         <div className="flex-1 min-w-0">
@@ -261,7 +262,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
               <StatPill icon="❤️" value={`${viewing.stats.health}`} color="text-red-400" glow="shadow-red-400/10" />
               <StatPill icon="✨" value={MOOD_LABEL[viewing.currentMood] ?? viewing.currentMood} color="text-purple-400" glow="shadow-purple-400/10" />
               <div className="glass rounded-2xl p-1.5 ml-1">
-                <Avatar config={avatars[viewing.id]} size={36} mood={viewing.currentMood} />
+                <Avatar3DInline config={avatars[viewing.id]} size={36} mood={viewing.currentMood} />
               </div>
             </div>
           ) : (

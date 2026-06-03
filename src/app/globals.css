@@ -142,6 +142,97 @@ body {
   animation: lockin-flash 0.4s ease-out forwards;
 }
 
+/* ── Character Select — dark atmospheric theme ── */
+
+.char-select-bg {
+  background:
+    radial-gradient(ellipse at 20% 40%, rgba(79, 142, 247, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(244, 114, 182, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 85%, rgba(74, 222, 128, 0.04) 0%, transparent 50%),
+    linear-gradient(180deg, #080818 0%, #0d0d2b 30%, #121228 60%, #080818 100%);
+  color: #e2e8f0;
+}
+
+.glass-card-premium {
+  position: relative;
+  background: rgba(18, 18, 40, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 22px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.glass-card-premium::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(79, 142, 247, 0.3),
+    rgba(244, 114, 182, 0.2),
+    rgba(74, 222, 128, 0.2),
+    rgba(79, 142, 247, 0.3)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+.glass-card-premium:hover::before,
+.glass-card-premium.card-locked::before {
+  opacity: 1;
+}
+.glass-card-premium:hover {
+  border-color: rgba(79, 142, 247, 0.2);
+  box-shadow:
+    0 12px 48px rgba(79, 142, 247, 0.08),
+    0 4px 24px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.glass-card-premium.card-locked {
+  border-color: rgba(79, 142, 247, 0.3);
+  box-shadow:
+    0 0 24px rgba(79, 142, 247, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.btn-secondary-dark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  font-size: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+}
+.btn-secondary-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+@keyframes float-particle {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  25% { transform: translate(25px, -35px) scale(1.08); opacity: 0.5; }
+  50% { transform: translate(-18px, -60px) scale(0.92); opacity: 0.35; }
+  75% { transform: translate(12px, -25px) scale(1.05); opacity: 0.55; }
+}
+.animate-float-particle {
+  animation: float-particle 20s ease-in-out infinite;
+}
+
 /* ── Simulation dark theme override ── */
 .sim-dark {
   background: #09090b;
