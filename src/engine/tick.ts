@@ -8,17 +8,10 @@ import { pruneOldRumors } from './rumors';
 
 const HOURS_PER_TICK = 3;
 
-/**
- * PERFORMANCE FIX: Subsystem throttling.
- *
- * Not every system needs to run every tick.
- * Social events, memory decay, rumor pruning, and life events
- * are staggered across ticks to reduce per-tick computation.
- */
-const SOCIAL_EVERY = 2;       // social interactions every 2nd tick
-const MEMORY_DECAY_EVERY = 3; // memory decay every 3rd tick
-const LIFE_EVENTS_EVERY = 2;  // life events every 2nd tick
-const RUMOR_PRUNE_EVERY = 4;  // rumor pruning every 4th tick
+const SOCIAL_EVERY = 2;
+const MEMORY_DECAY_EVERY = 3;
+const LIFE_EVENTS_EVERY = 2;
+const RUMOR_PRUNE_EVERY = 4;
 
 export function advanceTime(time: SimTime): SimTime {
   let { day, hour, tick } = time;
@@ -28,7 +21,10 @@ export function advanceTime(time: SimTime): SimTime {
   if (hour >= 24) {
     hour = 0;
     day += 1;
-    if (day > 7) day = 1;
+  }
+
+  if (day > 7) {
+    return { day: 7, hour: 24, tick };
   }
 
   return { day, hour, tick };
@@ -86,7 +82,6 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
   const newTransactions: typeof world.transactions = [];
   let npcs = new Map(world.npcs);
 
-  // ── Core loop: always runs (action selection + stats) ──
   for (const [id, npc] of npcs) {
     const relationships = world.relationships.get(id) ?? [];
     const chosen = chooseAction(npc, newTime, relationships);
@@ -111,7 +106,6 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     updated = spentNPC;
     if (spendTx) newTransactions.push(spendTx);
 
-    // Memory decay — throttled
     if (tick % MEMORY_DECAY_EVERY === 0) {
       updated = { ...updated, memory: decayMemories(updated.memory, newTime.tick) };
     }
@@ -136,10 +130,11 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     ...world,
     time: newTime,
     npcs,
-    transactions: [...world.transactions, ...newTransactions],
+    transactions: newTransactions.length > 0
+      ? [...world.transactions, ...newTransactions]
+      : world.transactions,
   };
 
-  // ── Social events — throttled ──
   if (tick % SOCIAL_EVERY === 0) {
     const socialEvents = generateSocialEvents(updatedWorld);
     for (const event of socialEvents) {
@@ -148,7 +143,6 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     }
   }
 
-  // ── Life events — throttled ──
   if (tick % LIFE_EVENTS_EVERY === 1) {
     for (const [id, npc] of updatedWorld.npcs) {
       const lifeEvents = rollLifeEvents(npc, newTime);
@@ -165,16 +159,24 @@ export function processTick(world: WorldState): { world: WorldState; events: Sim
     }
   }
 
-  // ── Rumor pruning — throttled ──
   const prunedRumors = tick % RUMOR_PRUNE_EVERY === 0
     ? pruneOldRumors(updatedWorld.rumors, newTime.tick)
     : updatedWorld.rumors;
 
+  const newEventLog = allEvents.length > 0
+    ? [...updatedWorld.eventLog, ...allEvents].slice(-200)
+    : updatedWorld.eventLog.length > 200
+    ? updatedWorld.eventLog.slice(-200)
+    : updatedWorld.eventLog;
+
+  const txs = updatedWorld.transactions;
+  const finalTx = txs.length > 500 ? txs.slice(-500) : txs;
+
   updatedWorld = {
     ...updatedWorld,
     rumors: prunedRumors,
-    eventLog: [...updatedWorld.eventLog, ...allEvents].slice(-200),
-    transactions: updatedWorld.transactions.slice(-500),
+    eventLog: newEventLog,
+    transactions: finalTx,
   };
 
   return { world: updatedWorld, events: allEvents };

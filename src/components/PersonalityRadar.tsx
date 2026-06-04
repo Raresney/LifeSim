@@ -50,35 +50,41 @@ export default function PersonalityRadar({ traits }: { traits: string[] }) {
 
   return (
     <svg viewBox="0 0 100 100" className="w-full max-w-[240px] mx-auto">
+      {/* Grid rings */}
       {[0.25, 0.5, 0.75, 1].map(scale => (
         <polygon key={scale}
           points={AXES.map((_, i) => {
             const a = (i / AXES.length) * Math.PI * 2 - Math.PI / 2;
             return `${(C + Math.cos(a) * R * scale).toFixed(1)},${(C + Math.sin(a) * R * scale).toFixed(1)}`;
           }).join(' ')}
-          fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="0.3"
+          fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth="0.3"
         />
       ))}
+      {/* Axis lines */}
       {AXES.map((_, i) => {
         const a = (i / AXES.length) * Math.PI * 2 - Math.PI / 2;
         return <line key={i} x1={C} y1={C}
           x2={(C + Math.cos(a) * R).toFixed(1)} y2={(C + Math.sin(a) * R).toFixed(1)}
-          stroke="rgba(0,0,0,0.05)" strokeWidth="0.3" />;
+          stroke="rgba(148,163,184,0.08)" strokeWidth="0.3" />;
       })}
-      <path d={pathD} fill="rgba(79, 142, 247, 0.12)" stroke="rgba(79, 142, 247, 0.7)" strokeWidth="0.7"
+      {/* Filled area */}
+      <path d={pathD} fill="rgba(96, 165, 250, 0.15)" stroke="rgba(96, 165, 250, 0.8)" strokeWidth="0.7"
         style={{ transition: 'all 1s cubic-bezier(0.34, 1.56, 0.64, 1)' }} />
-      <path d={pathD} fill="none" stroke="rgba(79, 142, 247, 0.25)" strokeWidth="2" filter="url(#radar-glow)"
+      {/* Glow outline */}
+      <path d={pathD} fill="none" stroke="rgba(96, 165, 250, 0.3)" strokeWidth="2" filter="url(#radar-glow)"
         style={{ transition: 'all 1s cubic-bezier(0.34, 1.56, 0.64, 1)' }} />
+      {/* Data points */}
       {points.map((p, i) => (
-        <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="1.5" fill="#4F8EF7"
-          style={{ transition: `all 1s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 0.04}s` }} />
+        <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="1.5" fill="#60a5fa"
+          style={{ transition: `all 1s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 0.04}s`, filter: 'drop-shadow(0 0 2px rgba(96,165,250,0.5))' }} />
       ))}
+      {/* Axis labels */}
       {AXES.map((label, i) => {
         const a = (i / AXES.length) * Math.PI * 2 - Math.PI / 2;
         return (
           <text key={i} x={(C + Math.cos(a) * (R + 9)).toFixed(1)} y={(C + Math.sin(a) * (R + 9)).toFixed(1)}
             textAnchor="middle" dominantBaseline="central"
-            fill="rgba(0,0,0,0.35)" fontSize="2.8" fontWeight="500" fontFamily="system-ui, sans-serif">
+            fill="rgba(148,163,184,0.6)" fontSize="2.8" fontWeight="500" fontFamily="system-ui, sans-serif">
             {label}
           </text>
         );

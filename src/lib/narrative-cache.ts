@@ -47,15 +47,16 @@ export function getCached(hash: string): CacheEntry | null {
 
 export function setCached(hash: string, narrative: string, model: string): void {
   if (cache.size >= MAX_ENTRIES) {
-    let oldest: string | null = null;
-    let oldestTime = Infinity;
+    let evictKey: string | null = null;
+    let evictScore = Infinity;
     for (const [key, entry] of cache) {
-      if (entry.createdAt < oldestTime) {
-        oldestTime = entry.createdAt;
-        oldest = key;
+      const score = entry.hitCount * 1000 + (entry.createdAt / 1000);
+      if (score < evictScore) {
+        evictScore = score;
+        evictKey = key;
       }
     }
-    if (oldest) cache.delete(oldest);
+    if (evictKey) cache.delete(evictKey);
   }
 
   cache.set(hash, {

@@ -6,17 +6,19 @@ export interface MapLocation {
   lat: number;
   lng: number;
   icon: string;
+  type: string;        // building category for 3D interaction
+  description: string; // shown in building popup
 }
 
 export const LOCATION_POINTS: MapLocation[] = [
-  { id: 'work',       name: 'Palas Campus (Offices)',     lat: 47.1555, lng: 27.5890, icon: '🏢' },
-  { id: 'cafe',       name: 'Cafeneaua de la Teatru',     lat: 47.1585, lng: 27.5870, icon: '☕' },
-  { id: 'park',       name: 'Parcul Copou',               lat: 47.1740, lng: 27.5680, icon: '🌳' },
-  { id: 'gym',        name: 'WorldClass Fitness',         lat: 47.1560, lng: 27.5870, icon: '🏋️' },
-  { id: 'restaurant', name: 'Restaurant Centru Vechi',    lat: 47.1600, lng: 27.5890, icon: '🍽️' },
-  { id: 'bar',        name: 'Old Center Bar',             lat: 47.1595, lng: 27.5910, icon: '🍺' },
-  { id: 'shop',       name: 'Palas Mall',                 lat: 47.1545, lng: 27.5875, icon: '🛒' },
-  { id: 'hospital',   name: 'Spitalul Sf. Spiridon',     lat: 47.1620, lng: 27.5840, icon: '🏥' },
+  { id: 'work',       name: 'Palas Campus (Offices)',     lat: 47.1555, lng: 27.5890, icon: '🏢', type: 'office',     description: 'Modern office complex at Palas Campus' },
+  { id: 'cafe',       name: 'Cafeneaua de la Teatru',     lat: 47.1585, lng: 27.5870, icon: '☕', type: 'cafe',       description: 'Cozy cafe near the National Theatre' },
+  { id: 'park',       name: 'Parcul Copou',               lat: 47.1740, lng: 27.5680, icon: '🌳', type: 'park',       description: 'Historic park with the famous Linden Tree of Eminescu' },
+  { id: 'gym',        name: 'WorldClass Fitness',         lat: 47.1560, lng: 27.5870, icon: '🏋️', type: 'gym',        description: 'Premium fitness center' },
+  { id: 'restaurant', name: 'Restaurant Centru Vechi',    lat: 47.1600, lng: 27.5890, icon: '🍽️', type: 'restaurant', description: 'Traditional Romanian restaurant in the Old Center' },
+  { id: 'bar',        name: 'Old Center Bar',             lat: 47.1595, lng: 27.5910, icon: '🍺', type: 'bar',        description: 'Popular nightlife spot in Piața Unirii area' },
+  { id: 'shop',       name: 'Palas Mall',                 lat: 47.1545, lng: 27.5875, icon: '🛒', type: 'mall',       description: 'Largest shopping mall in Iași' },
+  { id: 'hospital',   name: 'Spitalul Sf. Spiridon',     lat: 47.1620, lng: 27.5840, icon: '🏥', type: 'hospital',   description: 'One of the oldest hospitals in Romania' },
 ];
 
 export const NPC_HOMES: Record<string, { lat: number; lng: number; name: string }> = {
@@ -70,6 +72,21 @@ export function getLocationCoords(
   }
 
   return { lat: 47.1600, lng: 27.5850 };
+}
+
+export function getLocationInfo(locationId: Location): MapLocation | undefined {
+  return LOCATION_POINTS.find(l => l.id === locationId);
+}
+
+export function getAllLocationCoords(): Array<{ lat: number; lng: number; id: string }> {
+  const all: Array<{ lat: number; lng: number; id: string }> = [];
+  for (const loc of LOCATION_POINTS) {
+    all.push({ lat: loc.lat, lng: loc.lng, id: loc.id });
+  }
+  for (const [id, home] of Object.entries(NPC_HOMES)) {
+    all.push({ lat: home.lat, lng: home.lng, id });
+  }
+  return all;
 }
 
 export const IASI_CENTER = { lat: 47.1585, lng: 27.5845 };

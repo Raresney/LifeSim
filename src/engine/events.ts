@@ -41,13 +41,14 @@ function applyStatChanges(npc: NPC, changes: Partial<NPC['stats']>): NPC {
 }
 
 export function applyEffects(world: WorldState, event: SimEvent): WorldState {
-  let { npcs, relationships, reputation, rumors } = world;
-  npcs = new Map(npcs);
-  let newReputation = [...reputation];
-  let newRumors = [...rumors];
+  // PERF: Only copy Maps once, then mutate in-place within this function
+  let npcs: Map<string, NPC> | null = null;
+  let relationships: Map<string, import('./types').Relationship[]> | null = null;
+  let rumorsChanged = false;
+  let rumors = world.rumors;
 
   for (const effect of event.effects) {
-    const npc = npcs.get(effect.targetNPCId);
+    const npc = (npcs ?? world.npcs).get(effect.targetNPCId);
     if (!npc) continue;
 
     let updated = { ...npc };
@@ -71,14 +72,15 @@ export function applyEffects(world: WorldState, event: SimEvent): WorldState {
     if (effect.newGoal) {
       const goal = {
         ...effect.newGoal,
-        id: `goal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: `goal_${event.tick}_${Math.random().toString(36).slice(2, 6)}`,
         createdAtTick: event.tick,
       };
       updated.goals = [...updated.goals, goal];
     }
     if (effect.relationshipChange) {
       const rc = effect.relationshipChange;
-      const existing = getRelationship(relationships, effect.targetNPCId, rc.targetId);
+      const rels = relationships ?? world.relationships;
+      const existing = getRelationship(rels, effect.targetNPCId, rc.targetId);
       if (existing) {
         const adjusted = adjustRelationship(
           existing,
@@ -87,24 +89,29 @@ export function applyEffects(world: WorldState, event: SimEvent): WorldState {
           rc.respectDelta ?? 0,
           event.tick,
         );
+        if (!relationships) relationships = new Map(world.relationships);
         relationships = setRelationship(relationships, effect.targetNPCId, adjusted);
       }
     }
 
+    if (!npcs) npcs = new Map(world.npcs);
     npcs.set(effect.targetNPCId, updated);
   }
 
   const newRumor = generateRumorFromEvent(event, event.tick);
   if (newRumor) {
-    newRumors.push(newRumor);
+    rumors = [...rumors, newRumor];
+    rumorsChanged = true;
   }
+
+  // PERF: Only spread world if something actually changed
+  if (!npcs && !relationships && !rumorsChanged) return world;
 
   return {
     ...world,
-    npcs,
-    relationships,
-    reputation: newReputation,
-    rumors: newRumors,
+    npcs: npcs ?? world.npcs,
+    relationships: relationships ?? world.relationships,
+    rumors,
   };
 }
 
@@ -139,15 +146,28 @@ export function generateSocialEvents(worldParam: WorldState): SimEvent[] {
       }
     }
 
+    // PERF: Cap rumor spreading — max 3 spreads per location per tick
+    // Avoids O(npcs × rumors) explosion when many rumors accumulate
     if (['cafe', 'bar', 'park'].includes(location)) {
+      let spreadCount = 0;
+      const MAX_SPREADS_PER_LOCATION = 3;
       for (const npc of npcsHere) {
-        for (let ri = 0; ri < world.rumors.length; ri++) {
-          const rumor = world.rumors[ri];
+        if (spreadCount >= MAX_SPREADS_PER_LOCATION) break;
+        // Only check the 10 most recent rumors (older ones are less relevant)
+        const recentRumors = world.rumors.length > 10 ? world.rumors.slice(-10) : world.rumors;
+        for (const rumor of recentRumors) {
+          if (spreadCount >= MAX_SPREADS_PER_LOCATION) break;
           if (shouldSpreadRumor(npc, rumor)) {
             const target = npcsHere.find(n => n.id !== npc.id && !rumor.spreadBy.includes(n.id));
             if (target) {
               const spread = spreadRumor(rumor, npc.id, npc.personality);
-              world = { ...world, rumors: world.rumors.map((r, i) => i === ri ? spread : r) };
+              // PERF: Mutate the rumor in-place in the array instead of copying entire array
+              const ri = world.rumors.indexOf(rumor);
+              if (ri >= 0) {
+                const newRumors = [...world.rumors];
+                newRumors[ri] = spread;
+                world = { ...world, rumors: newRumors };
+              }
 
               events.push(createEvent(
                 'rumor',
@@ -168,6 +188,7 @@ export function generateSocialEvents(worldParam: WorldState): SimEvent[] {
                   },
                 ],
               ));
+              spreadCount++;
             }
           }
         }

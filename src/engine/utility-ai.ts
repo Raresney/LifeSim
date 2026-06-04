@@ -147,22 +147,20 @@ function goalScore(npc: NPC): Partial<Record<Activity, number>> {
   for (const goal of npc.goals) {
     if (goal.status !== 'active') continue;
     const weight = goal.priority * (1 - goal.progress / 100) * 3;
+    // PERF: Single toLowerCase() call instead of 7
+    const desc = goal.description.toLowerCase();
     // Goals about career/money push work
-    if (goal.description.toLowerCase().includes('promot') ||
-        goal.description.toLowerCase().includes('money') ||
-        goal.description.toLowerCase().includes('career')) {
+    if (desc.includes('promot') || desc.includes('money') || desc.includes('career')) {
       scores.working = (scores.working ?? 0) + weight;
       scores.studying = (scores.studying ?? 0) + weight * 0.5;
     }
     // Social goals
-    if (goal.description.toLowerCase().includes('friend') ||
-        goal.description.toLowerCase().includes('relationship')) {
+    if (desc.includes('friend') || desc.includes('relationship')) {
       scores.socializing = (scores.socializing ?? 0) + weight;
       scores.flirting = (scores.flirting ?? 0) + weight * 0.5;
     }
     // Health goals
-    if (goal.description.toLowerCase().includes('health') ||
-        goal.description.toLowerCase().includes('fit')) {
+    if (desc.includes('health') || desc.includes('fit')) {
       scores.exercising = (scores.exercising ?? 0) + weight;
     }
   }

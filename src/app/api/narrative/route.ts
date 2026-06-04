@@ -5,17 +5,16 @@ import { hashNpcState, getCached, setCached } from '../../../lib/narrative-cache
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? '';
 
-const FREE_MODELS = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'google/gemma-4-26b-a4b-it:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'qwen/qwen3-coder:free',
-  'nousresearch/hermes-3-llama-3.1-405b:free',
+const MODELS = [
+  'google/gemini-2.0-flash-001',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3.5-haiku',
+  'meta-llama/llama-3.3-70b-instruct',
 ];
 
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 3000;
-const FETCH_TIMEOUT_MS = 15_000;
+const MAX_RETRIES = 1;
+const RETRY_DELAY_MS = 2000;
+const FETCH_TIMEOUT_MS = 30_000;
 
 const NpcStatsSchema = z.object({
   energy: z.number().min(0).max(100),
@@ -79,6 +78,10 @@ async function callOpenRouter(
     });
 
     const data = await response.json();
+
+    if (!response.ok || data.error) {
+      console.error(`[OpenRouter] model=${model} status=${response.status} error=`, JSON.stringify(data.error ?? data));
+    }
 
     if (response.status === 429 || data.error?.code === 429) {
       return { success: false, retryable: true };
@@ -165,6 +168,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  console.log(`[Narrative] API key present (${OPENROUTER_API_KEY.length} chars, starts: ${OPENROUTER_API_KEY.slice(0, 12)}...)`);
+
   const stateHash = hashNpcState(npc as Parameters<typeof hashNpcState>[0]);
   const cached = getCached(stateHash);
   if (cached) {
@@ -204,7 +209,7 @@ ${memory || 'No significant memories yet.'}
 
 Write what this character is thinking right now, their recent reflections, plans for the near future, and how they feel about the people in their life. Make it personal and emotional.`;
 
-  for (const model of FREE_MODELS) {
+  for (const model of MODELS) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -232,7 +237,7 @@ Write what this character is thinking right now, their recent reflections, plans
   }
 
   return NextResponse.json({
-    narrative: 'All free LLM models are temporarily rate-limited. Try again in 10-15 seconds.',
+    narrative: 'All LLM models are temporarily unavailable. Try again in a few seconds.',
     model: 'none',
   });
 }

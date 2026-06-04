@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  turbopack: {},
+  turbopack: {
+    root: __dirname,
+  },
   serverExternalPackages: ['@neondatabase/serverless'],
 
   images: {

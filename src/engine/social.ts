@@ -72,16 +72,17 @@ export function setRelationship(
   fromId: string,
   rel: Relationship,
 ): Map<string, Relationship[]> {
-  const updated = new Map(relationships);
-  const existing = updated.get(fromId) ?? [];
+  // PERF: If caller already copied the Map, we mutate in-place
+  // Caller is responsible for copying if needed
+  const existing = relationships.get(fromId) ?? [];
   const idx = existing.findIndex(r => r.targetId === rel.targetId);
   if (idx >= 0) {
     existing[idx] = rel;
   } else {
     existing.push(rel);
   }
-  updated.set(fromId, existing);
-  return updated;
+  relationships.set(fromId, existing);
+  return relationships;
 }
 
 // Reputation: each NPC has their own perception of every other NPC
@@ -101,20 +102,19 @@ export function updateReputation(
   newTrait?: string,
 ): ReputationEntry[] {
   const clamp = (v: number) => Math.max(-100, Math.min(100, v));
-  const existing = reputations.find(
+  // PERF: Single findIndex instead of find + map with re-check
+  const idx = reputations.findIndex(
     r => r.observerId === observerId && r.subjectId === subjectId
   );
 
-  if (existing) {
-    return reputations.map(r => {
-      if (r.observerId === observerId && r.subjectId === subjectId) {
-        const traits = newTrait && !r.traits.includes(newTrait)
-          ? [...r.traits, newTrait].slice(-5)
-          : r.traits;
-        return { ...r, score: clamp(r.score + scoreDelta), traits };
-      }
-      return r;
-    });
+  if (idx >= 0) {
+    const r = reputations[idx];
+    const traits = newTrait && !r.traits.includes(newTrait)
+      ? [...r.traits, newTrait].slice(-5)
+      : r.traits;
+    const updated = [...reputations];
+    updated[idx] = { ...r, score: clamp(r.score + scoreDelta), traits };
+    return updated;
   }
 
   return [

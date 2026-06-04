@@ -9,7 +9,6 @@ import { useSimulation } from '../hooks/useSimulation';
 import NPCDetail from './NPCDetail';
 import Timeline from './Timeline';
 import Avatar from './Avatar';
-import { Avatar3DInline } from './Character3D';
 
 const GlobeView = dynamic(() => import('./GlobeView'), { ssr: false });
 const MapView = dynamic(() => import('./MapView'), { ssr: false });
@@ -53,10 +52,6 @@ function getMoodGlow(mood: string): string {
     ? 'shadow-amber-400/30' : 'shadow-zinc-500/30';
 }
 
-/**
- * PERF FIX: NPCSidebarItem uses CSS transitions instead of Framer Motion
- * for stat bars. AnimatePresence kept only for expand/collapse toggle.
- */
 const NPCSidebarItem = memo(function NPCSidebarItem({
   npc, avatar, isFocused, onFocus, onUnfocus, onDetail,
 }: {
@@ -74,34 +69,34 @@ const NPCSidebarItem = memo(function NPCSidebarItem({
     <button
       onClick={() => isFocused ? onUnfocus() : onFocus(npc)}
       onDoubleClick={() => onDetail(npc)}
-      className={`w-full text-left px-3 py-2.5 mx-1 my-0.5 rounded-xl transition-all duration-300 group ${
+      className={`w-full text-left px-3 py-2.5 mx-1 my-0.5 rounded-xl transition-all duration-300 group sidebar-card-hover ${
         isFocused
-          ? 'bg-blue-500/10 border border-blue-500/20 shadow-lg shadow-blue-500/5'
-          : 'hover:bg-white/[0.03] border border-transparent hover:border-zinc-800/60'
+          ? 'bg-blue-500/8 border border-blue-500/15 shadow-lg shadow-blue-500/5'
+          : 'border border-transparent'
       }`}
       style={{ width: 'calc(100% - 8px)' }}
     >
       <div className="flex items-center gap-3">
         <div className="relative flex-shrink-0">
-          <div className={`absolute -inset-0.5 rounded-lg transition-all duration-300 ${isFocused ? 'ring-2 ring-blue-400/30' : ''}`} />
-          <Avatar3DInline config={avatar} size={36} mood={npc.currentMood} occupation={npc.occupation} />
-          <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950 ${moodColor} shadow-sm ${moodGlow}`} />
+          <div className={`absolute -inset-0.5 rounded-lg transition-all duration-300 ${isFocused ? 'ring-2 ring-blue-400/25' : ''}`} />
+          <Avatar config={avatar} size={36} mood={npc.currentMood} />
+          <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${moodColor} shadow-sm ${moodGlow}`} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className={`text-[13px] font-medium truncate transition-colors duration-200 ${isFocused ? 'text-blue-300' : 'text-zinc-300 group-hover:text-zinc-100'}`}>
+            <span className={`text-[13px] font-medium truncate transition-colors duration-200 ${isFocused ? 'text-[#007AFF]' : 'text-slate-700 group-hover:text-slate-900'}`}>
               {npc.name}
             </span>
             {isFocused && (
-              <span className="text-[7px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 uppercase tracking-widest font-semibold border border-blue-500/20">
+              <span className="text-[7px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-[#007AFF] uppercase tracking-widest font-semibold border border-blue-500/15">
                 focus
               </span>
             )}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">{npc.occupation}</span>
-            <span className="text-zinc-800">&middot;</span>
-            <span className="text-[10px] text-zinc-600">{MOOD_LABEL[npc.currentMood] ?? npc.currentMood}</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wide">{npc.occupation}</span>
+            <span className="text-slate-300">&middot;</span>
+            <span className="text-[10px] text-slate-400">{MOOD_LABEL[npc.currentMood] ?? npc.currentMood}</span>
           </div>
         </div>
         <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
@@ -113,7 +108,6 @@ const NPCSidebarItem = memo(function NPCSidebarItem({
           </span>
         </div>
       </div>
-      {/* PERF: Use CSS height transition instead of AnimatePresence for stats */}
       <div
         className="overflow-hidden transition-all duration-200 ease-out"
         style={{ maxHeight: isFocused ? '120px' : '0px', opacity: isFocused ? 1 : 0 }}
@@ -124,8 +118,8 @@ const NPCSidebarItem = memo(function NPCSidebarItem({
           <MiniBar label="Happy" value={npc.stats.happiness} color="#22c55e" />
           <MiniBar label="Stress" value={npc.stats.stress} color="#f97316" />
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[9px] text-zinc-500 font-mono">$ {npc.stats.money}</span>
-            <span className="text-[9px] text-zinc-500 font-mono">{100 - npc.stats.hunger}% fed</span>
+            <span className="text-[9px] text-slate-500 font-mono">$ {npc.stats.money}</span>
+            <span className="text-[9px] text-slate-500 font-mono">{100 - npc.stats.hunger}% fed</span>
           </div>
         </div>
       </div>
@@ -144,13 +138,10 @@ export default function SimulationView({ avatars, onBack }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('globe');
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // PERF: Stable array reference — only changes when world.npcs Map identity changes
   const npcs = useMemo(() => Array.from(world.npcs.values()), [world.npcs]);
 
-  // PERF: Get fresh NPC data from world for the focused one
   const viewing = focusedNPC ? (world.npcs.get(focusedNPC.id) ?? null) : null;
 
-  // PERF: Stable callbacks — no deps on viewMode so they don't recreate
   const transitionToMap = useCallback((npc: NPC) => {
     setFocusedNPC(npc);
     setViewMode(prev => {
@@ -181,14 +172,12 @@ export default function SimulationView({ avatars, onBack }: Props) {
     return () => clearTimeout(t);
   }, [viewMode]);
 
-  // PERF: Stable callback refs for sidebar items
   const handleDetail = useCallback((npc: NPC) => setSelectedNPC(npc), []);
 
   const isShowingMap = viewMode === 'map' || viewMode === 'transitioning-to-globe';
   const isShowingGlobe = viewMode === 'globe' || viewMode === 'transitioning-to-map';
   const isTransitioning = viewMode === 'transitioning-to-map' || viewMode === 'transitioning-to-globe';
 
-  // PERF: Memoize map handlers
   const handleMapNPCClick = useCallback((npc: NPC) => {
     setFocusedNPC(npc);
     setSelectedNPC(npc);
@@ -204,14 +193,13 @@ export default function SimulationView({ avatars, onBack }: Props) {
   }, [world.npcs, transitionToMap]);
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden relative flex flex-col sim-dark">
+    <div className="h-screen w-screen overflow-hidden relative flex flex-col sim-light">
 
-      {/* ── Transition overlay ── */}
       <div
         className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-400"
         style={{
           opacity: isTransitioning ? 1 : 0,
-          background: 'radial-gradient(ellipse at center, rgba(15,23,42,0.95) 0%, rgba(9,9,11,0.98) 100%)',
+          background: 'radial-gradient(ellipse at center, rgba(243,247,250,0.95) 0%, rgba(228,237,245,0.98) 100%)',
         }}
       >
         {isTransitioning && (
@@ -219,9 +207,9 @@ export default function SimulationView({ avatars, onBack }: Props) {
             <div className="flex flex-col items-center gap-4">
               <div className="relative w-10 h-10">
                 <div className="absolute inset-0 border-2 border-blue-400/20 rounded-full" />
-                <div className="absolute inset-0 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                <div className="absolute inset-0 border-2 border-[#007AFF] border-t-transparent rounded-full animate-spin" />
               </div>
-              <span className="text-xs text-zinc-400 tracking-[0.2em] uppercase font-medium">
+              <span className="text-xs text-slate-500 tracking-[0.2em] uppercase font-medium">
                 {viewMode === 'transitioning-to-map' ? 'Zooming in...' : 'Returning to globe...'}
               </span>
             </div>
@@ -229,27 +217,84 @@ export default function SimulationView({ avatars, onBack }: Props) {
         )}
       </div>
 
-      {/* ── Top Bar ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
+        {/* Day labels */}
+        <div className="flex items-center h-5 bg-white/70 backdrop-blur-md border-b border-slate-200/40">
+          {[1, 2, 3, 4, 5, 6, 7].map(day => {
+            const isToday = world.time.day === day;
+            const isPast = world.time.day > day;
+            return (
+              <div key={day} className="flex-1 flex items-center justify-center relative">
+                <span className={`text-[9px] font-mono tracking-wider transition-colors duration-300 ${
+                  isToday ? 'text-[#007AFF] font-semibold' : isPast ? 'text-emerald-600/60' : 'text-slate-400'
+                }`}>
+                  {DAY_NAMES[day]}
+                </span>
+                {isToday && (
+                  <span className="ml-1.5 text-[8px] text-[#007AFF]/60 font-mono">
+                    {world.time.hour.toString().padStart(2, '0')}:00
+                  </span>
+                )}
+                {day < 7 && (
+                  <div className="absolute right-0 top-1 bottom-1 w-px bg-slate-200/50" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {/* Progress segments */}
+        <div className="flex items-center gap-0 h-1 bg-slate-200/40">
+          {[1, 2, 3, 4, 5, 6, 7].map(day => {
+            const progress = world.time.day > day ? 100
+              : world.time.day === day ? (world.time.hour / 24) * 100
+              : 0;
+            const isToday = world.time.day === day;
+            return (
+              <div key={day} className="flex-1 h-full relative">
+                <div className="h-full bg-slate-300/30" />
+                <div
+                  className="absolute inset-y-0 left-0 rounded-r-sm transition-all duration-700 ease-out"
+                  style={{
+                    width: `${progress}%`,
+                    background: isToday
+                      ? 'linear-gradient(90deg, #3b82f6, #60a5fa)'
+                      : progress === 100
+                      ? 'linear-gradient(90deg, #22c55e70, #4ade8050)'
+                      : 'transparent',
+                  }}
+                >
+                  {isToday && world.isRunning && (
+                    <div className="absolute inset-0 progress-shimmer rounded-r-sm" />
+                  )}
+                </div>
+                {day < 7 && (
+                  <div className="absolute right-0 top-0 bottom-0 w-px bg-slate-300/30" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="absolute top-7 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2.5">
-          {/* PERF: Removed whileHover/whileTap — CSS hover instead */}
           <button
             onClick={onBack}
-            className="flex items-center gap-3 glass rounded-2xl px-4 py-2.5 hover:bg-zinc-800/50 transition-all duration-300 group hover:scale-[1.02] active:scale-[0.98]"
+            className="flex items-center gap-3 glass rounded-2xl px-4 py-2.5 hover:bg-white/70 transition-all duration-300 group hover:scale-[1.02] active:scale-[0.98]"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-zinc-500 group-hover:text-zinc-300 transition-colors">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-slate-400 group-hover:text-slate-600 transition-colors">
               <path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             <div>
-              <div className="text-sm font-bold leading-tight text-zinc-200">{"Iași, Romania"}</div>
-              <div className="text-[10px] text-zinc-500 font-mono">{formattedTime}</div>
+              <div className="text-sm font-bold leading-tight text-slate-700">{"Ia\u{015F}i, Romania"}</div>
+              <div className="text-[10px] text-slate-400 font-mono">{formattedTime}</div>
             </div>
           </button>
 
           <div className={`text-[10px] px-3 py-1.5 rounded-xl font-medium uppercase tracking-[0.15em] transition-all duration-300 ${
             isShowingMap
-              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-              : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+              : 'bg-blue-500/10 text-[#007AFF] border border-blue-500/15'
           }`}>
             {isShowingMap ? '🗺️ Street' : '🌍 Globe'}
           </div>
@@ -262,7 +307,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
               <StatPill icon="❤️" value={`${viewing.stats.health}`} color="text-red-400" glow="shadow-red-400/10" />
               <StatPill icon="✨" value={MOOD_LABEL[viewing.currentMood] ?? viewing.currentMood} color="text-purple-400" glow="shadow-purple-400/10" />
               <div className="glass rounded-2xl p-1.5 ml-1">
-                <Avatar3DInline config={avatars[viewing.id]} size={36} mood={viewing.currentMood} />
+                <Avatar config={avatars[viewing.id]} size={36} mood={viewing.currentMood} />
               </div>
             </div>
           ) : (
@@ -275,7 +320,6 @@ export default function SimulationView({ avatars, onBack }: Props) {
         </div>
       </div>
 
-      {/* ── Left Sidebar: Population ── */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div
@@ -285,17 +329,17 @@ export default function SimulationView({ avatars, onBack }: Props) {
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="absolute top-16 left-3 bottom-20 z-20 w-72"
           >
-            <div className="h-full glass-strong rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/20">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+            <div className="h-full glass-strong rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/8">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/40">
                 <div className="flex items-center gap-2.5">
                   <div className="relative">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                    <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-30" />
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-500 animate-ping opacity-30" />
                   </div>
-                  <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-[0.15em]">Population</span>
-                  <span className="text-[10px] text-zinc-600 font-mono bg-zinc-800/50 px-1.5 py-0.5 rounded-md">{npcs.length}</span>
+                  <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-[0.15em]">Population</span>
+                  <span className="text-[10px] text-slate-500 font-mono bg-slate-100/60 px-1.5 py-0.5 rounded-md">{npcs.length}</span>
                 </div>
-                <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all duration-200">
+                <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 transition-all duration-200">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                 </button>
               </div>
@@ -314,9 +358,9 @@ export default function SimulationView({ avatars, onBack }: Props) {
                 ))}
               </div>
 
-              <div className="px-4 py-2.5 border-t border-zinc-800/40 flex items-center justify-between">
-                <span className="text-[9px] text-zinc-600">Click to focus</span>
-                <span className="text-[9px] text-zinc-600">Double-click for details</span>
+              <div className="px-4 py-2.5 border-t border-slate-200/40 flex items-center justify-between">
+                <span className="text-[9px] text-slate-400">Click to focus</span>
+                <span className="text-[9px] text-slate-400">Double-click for details</span>
               </div>
             </div>
           </motion.div>
@@ -326,7 +370,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
       {!sidebarOpen && (
         <button
           onClick={() => setSidebarOpen(true)}
-          className="absolute top-16 left-3 z-20 glass rounded-xl px-3.5 py-2.5 text-xs text-zinc-400 hover:text-zinc-200 transition-all duration-200 flex items-center gap-2 hover:scale-105 active:scale-95"
+          className="absolute top-16 left-3 z-20 glass rounded-xl px-3.5 py-2.5 text-xs text-slate-500 hover:text-slate-700 transition-all duration-200 flex items-center gap-2 hover:scale-105 active:scale-95"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M8 2a6 6 0 100 12A6 6 0 008 2z" stroke="currentColor" strokeWidth="1.2"/>
@@ -337,28 +381,37 @@ export default function SimulationView({ avatars, onBack }: Props) {
         </button>
       )}
 
-      {/* ── Map background ── */}
       <div className="absolute inset-0 z-0">
-        {isShowingMap ? (
+        <div style={{
+          position: 'absolute', inset: 0,
+          visibility: isShowingMap ? 'visible' : 'hidden',
+          opacity: isShowingMap ? 1 : 0,
+          transition: 'opacity 0.4s ease',
+          zIndex: isShowingMap ? 1 : 0,
+        }}>
           <MapView
             npcs={world.npcs}
             avatars={avatars}
             onNPCClick={handleMapNPCClick}
             focusedNPCId={focusedNPC?.id ?? null}
             onZoomOutToGlobe={transitionToGlobe}
+            hour={world.time.hour}
+            recentEvents={recentEvents}
           />
-        ) : (
-          <GlobeView
-            npcs={world.npcs}
-            avatars={avatars}
-            onNPCClick={handleGlobeNPCClick}
-            focusedNPCId={null}
-            onZoomIn={handleGlobeZoomIn}
-          />
+        </div>
+        {isShowingGlobe && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+            <GlobeView
+              npcs={world.npcs}
+              avatars={avatars}
+              onNPCClick={handleGlobeNPCClick}
+              focusedNPCId={null}
+              onZoomIn={handleGlobeZoomIn}
+            />
+          </div>
         )}
       </div>
 
-      {/* ── Floating "doing now" card ── */}
       <AnimatePresence>
         {viewing && !isTransitioning && (
           <motion.div
@@ -368,30 +421,28 @@ export default function SimulationView({ avatars, onBack }: Props) {
             transition={{ duration: 0.3 }}
             className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20"
           >
-            <div className="glass rounded-2xl px-5 py-3 flex items-center gap-3 shadow-xl shadow-black/20">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-[0.15em] font-medium">doing now</span>
-              <div className="flex items-center gap-2 bg-zinc-800/50 rounded-xl px-3.5 py-1.5 border border-zinc-700/20">
-                <span className="text-base">{ACTIVITY_ICON[viewing.currentActivity] ?? '❓'}</span>
-                <span className="text-sm font-medium capitalize text-zinc-200">{viewing.currentActivity}</span>
+            <div className="glass rounded-2xl px-5 py-3 flex items-center gap-3 shadow-xl shadow-black/8">
+              <span className="text-[10px] text-slate-400 uppercase tracking-[0.15em] font-medium">doing now</span>
+              <div className="flex items-center gap-2 bg-white/60 rounded-xl px-3.5 py-1.5 border border-slate-200/40">
+                <span className="text-base">{ACTIVITY_ICON[viewing.currentActivity] ?? '\u{2753}'}</span>
+                <span className="text-sm font-medium capitalize text-slate-700">{viewing.currentActivity}</span>
               </div>
-              <span className="text-[10px] text-zinc-500">@ {viewing.currentLocation}</span>
+              <span className="text-[10px] text-slate-400">@ {viewing.currentLocation}</span>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Bottom Bar ── */}
       <div className="absolute bottom-0 left-0 right-0 z-20">
-        <div className="flex items-center justify-center gap-5 py-3 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent pt-10">
+        <div className="flex items-center justify-center gap-5 py-3 bg-gradient-to-t from-white via-white/90 to-transparent pt-10">
           <BottomButton icon="people" label="People" active={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)} />
 
           <div className="text-center min-w-[80px]">
-            <div className="text-lg font-bold text-zinc-200 tracking-wide">{DAY_NAMES[world.time.day]}</div>
-            <div className="text-[10px] text-zinc-500 font-mono">{world.time.hour.toString().padStart(2, '0')}:00</div>
-            <div className="text-[9px] text-zinc-600 mt-0.5">{PERIOD_NAMES[world.time.hour] ?? ''}</div>
+            <div className="text-lg font-bold text-slate-700 tracking-wide">{DAY_NAMES[world.time.day]}</div>
+            <div className="text-[10px] text-slate-400 font-mono">{world.time.hour.toString().padStart(2, '0')}:00</div>
+            <div className="text-[9px] text-slate-400 mt-0.5">{PERIOD_NAMES[world.time.hour] ?? ''}</div>
           </div>
 
-          {/* PERF: CSS hover/active instead of Framer whileHover/whileTap */}
           <button
             onClick={() => world.isRunning ? pause() : play()}
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl hover:scale-105 active:scale-[0.92] ${
@@ -412,11 +463,14 @@ export default function SimulationView({ avatars, onBack }: Props) {
             )}
           </button>
 
-          <div className="text-center min-w-[60px]">
-            <div className={`text-xs font-semibold uppercase tracking-[0.15em] transition-colors duration-300 ${world.isRunning ? 'text-emerald-400' : 'text-zinc-500'}`}>
+          <div className="text-center min-w-[60px] relative">
+            {world.isRunning && (
+              <div className="absolute -inset-2 rounded-xl bg-emerald-500/8 speed-active-glow" />
+            )}
+            <div className={`text-xs font-semibold uppercase tracking-[0.15em] transition-colors duration-300 ${world.isRunning ? 'text-emerald-600' : 'text-slate-400'}`}>
               {world.isRunning ? 'Running' : 'Paused'}
             </div>
-            <div className="text-[10px] text-zinc-600 font-mono">Tick #{world.time.tick}</div>
+            <div className="text-[10px] text-slate-400 font-mono">Tick #{world.time.tick}</div>
           </div>
 
           <BottomButton icon="events" label="Events" active={showTimeline} onClick={() => setShowTimeline(!showTimeline)} />
@@ -426,12 +480,15 @@ export default function SimulationView({ avatars, onBack }: Props) {
               <button
                 key={s}
                 onClick={() => setSpeed(s)}
-                className={`px-3 py-2 text-xs font-medium transition-all duration-200 ${
+                className={`px-3 py-2 text-xs font-medium transition-all duration-200 relative ${
                   world.speed === s
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
+                    ? 'bg-blue-500/15 text-[#007AFF]'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/40'
                 }`}
               >
+                {world.speed === s && world.isRunning && s > 1 && (
+                  <span className="absolute inset-0 bg-blue-400/10 speed-active-glow rounded" />
+                )}
                 {s}x
               </button>
             ))}
@@ -440,14 +497,13 @@ export default function SimulationView({ avatars, onBack }: Props) {
           <button
             onClick={tick}
             disabled={world.isRunning}
-            className="glass rounded-xl px-3.5 py-2 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-25 transition-all duration-200 font-medium hover:scale-[1.03] active:scale-[0.97]"
+            className="glass rounded-xl px-3.5 py-2 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-25 transition-all duration-200 font-medium hover:scale-[1.03] active:scale-[0.97]"
           >
             Step ▶
           </button>
         </div>
       </div>
 
-      {/* ── Timeline panel ── */}
       <AnimatePresence>
         {showTimeline && !selectedNPC && (
           <motion.div
@@ -457,10 +513,10 @@ export default function SimulationView({ avatars, onBack }: Props) {
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="absolute top-16 right-3 bottom-20 w-72 z-20"
           >
-            <div className="h-full glass-strong rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/20">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-                <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-[0.15em]">Events</span>
-                <button onClick={() => setShowTimeline(false)} className="w-6 h-6 flex items-center justify-center rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all duration-200">
+            <div className="h-full glass-strong rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/8">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/40">
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-[0.15em]">Events</span>
+                <button onClick={() => setShowTimeline(false)} className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 transition-all duration-200">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                 </button>
               </div>
@@ -472,7 +528,6 @@ export default function SimulationView({ avatars, onBack }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── NPC Detail panel ── */}
       <AnimatePresence>
         {selectedNPC && (
           <NPCDetail
@@ -497,10 +552,6 @@ const StatPill = memo(function StatPill({ icon, value, color, glow }: { icon: st
   );
 });
 
-/**
- * PERF FIX: BottomButton — CSS hover/active instead of Framer whileHover/whileTap.
- * Eliminates Framer Motion overhead on frequently-rendered controls.
- */
 const BottomButton = memo(function BottomButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -508,7 +559,7 @@ const BottomButton = memo(function BottomButton({ icon, label, active, onClick }
       className="flex flex-col items-center gap-1 group hover:scale-105 active:scale-95 transition-transform duration-150"
     >
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
-        active ? 'glass border-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
+        active ? 'glass border-blue-500/15 text-[#007AFF]' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/40'
       }`}>
         {icon === 'people' ? (
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -524,27 +575,22 @@ const BottomButton = memo(function BottomButton({ icon, label, active, onClick }
           </svg>
         )}
       </div>
-      <span className={`text-[9px] font-medium transition-colors duration-200 ${active ? 'text-blue-400' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{label}</span>
+      <span className={`text-[9px] font-medium transition-colors duration-200 ${active ? 'text-[#007AFF]' : 'text-slate-400 group-hover:text-slate-600'}`}>{label}</span>
     </button>
   );
 });
 
-/**
- * PERF FIX: MiniBar uses CSS transition instead of Framer motion.div animate.
- * Before: Framer Motion recalculated layout animation every tick (expensive).
- * After:  CSS transition on width — GPU-composited, zero JS overhead.
- */
 const MiniBar = memo(function MiniBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[9px] text-zinc-500 w-10">{label}</span>
-      <div className="flex-1 h-1 bg-zinc-800/80 rounded-full overflow-hidden">
+      <span className="text-[9px] text-slate-500 w-10">{label}</span>
+      <div className="flex-1 h-1 bg-slate-200/80 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-[width] duration-500 ease-out"
           style={{ backgroundColor: color, width: `${value}%` }}
         />
       </div>
-      <span className="text-[9px] text-zinc-500 w-5 text-right font-mono">{value}</span>
+      <span className="text-[9px] text-slate-500 w-5 text-right font-mono">{value}</span>
     </div>
   );
 });

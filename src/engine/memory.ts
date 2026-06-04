@@ -29,20 +29,49 @@ export function addMemory(npcMemory: NPCMemory, memory: Memory): NPCMemory {
 }
 
 export function decayMemories(npcMemory: NPCMemory, currentTick: number): NPCMemory {
-  const decayOne = (m: Memory): Memory => {
-    if (m.isLongTerm) {
-      const age = currentTick - m.tick;
-      const decayed = m.emotionalWeight - (age * DECAY_RATE * 0.2);
-      return { ...m, emotionalWeight: Math.max(1, decayed) };
-    }
+  // PERF: Skip if no memories to decay
+  if (npcMemory.shortTerm.length === 0 && npcMemory.longTerm.length === 0) {
+    return npcMemory;
+  }
+
+  let shortChanged = false;
+  const newShort: Memory[] = [];
+  for (const m of npcMemory.shortTerm) {
     const age = currentTick - m.tick;
     const decayed = m.emotionalWeight - (age * DECAY_RATE);
-    return { ...m, emotionalWeight: Math.max(0, decayed) };
-  };
+    const clamped = Math.max(0, decayed);
+    if (clamped <= 0) {
+      shortChanged = true;
+      continue; // filtered out
+    }
+    if (clamped !== m.emotionalWeight) {
+      shortChanged = true;
+      newShort.push({ ...m, emotionalWeight: clamped });
+    } else {
+      newShort.push(m);
+    }
+  }
+
+  let longChanged = false;
+  const newLong: Memory[] = [];
+  for (const m of npcMemory.longTerm) {
+    const age = currentTick - m.tick;
+    const decayed = m.emotionalWeight - (age * DECAY_RATE * 0.2);
+    const clamped = Math.max(1, decayed);
+    if (clamped !== m.emotionalWeight) {
+      longChanged = true;
+      newLong.push({ ...m, emotionalWeight: clamped });
+    } else {
+      newLong.push(m);
+    }
+  }
+
+  // PERF: Return same reference if nothing changed
+  if (!shortChanged && !longChanged) return npcMemory;
 
   return {
-    shortTerm: npcMemory.shortTerm.map(decayOne).filter(m => m.emotionalWeight > 0),
-    longTerm: npcMemory.longTerm.map(decayOne),
+    shortTerm: shortChanged ? newShort : npcMemory.shortTerm,
+    longTerm: longChanged ? newLong : npcMemory.longTerm,
   };
 }
 

@@ -1,232 +1,216 @@
-# LifeSim — Autonomous NPC Life Simulator
+# LifeSim
 
-A web application that simulates 10 NPCs living an autonomous week in Iasi, Romania. Each NPC has a unique identity, personality, goals, relationships, and memory — all driven by a **Utility AI engine** that runs without any LLM calls. An LLM is used **only on-demand** when the user clicks on an NPC to explore their inner world.
+Autonomous NPC life simulator. 10 characters live their own week in Iași, Romania — every decision, relationship, and memory emerges from a Utility AI engine with zero scripting.
+
+![Next.js](https://img.shields.io/badge/Next.js-16-black) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue) ![MapLibre](https://img.shields.io/badge/MapLibre_GL-3D_Map-orange) ![PostgreSQL](https://img.shields.io/badge/Neon-PostgreSQL-green)
 
 ## Quick Start
 
 ```bash
 npm install
 
-# Create .env.local
-echo "OPENROUTER_API_KEY=your-key-here" > .env.local
-echo "DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require" >> .env.local
+# .env.local
+OPENROUTER_API_KEY=your-key
+DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
 
-# Push database schema to Neon
 npm run db:push
-
-# Start dev server
 npm run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) — explore the landing page, customize anime avatars with LoL-style champion select, then start the simulation.
+Open [http://localhost:3001](http://localhost:3001)
 
-## Features
-
-- **Apple/Linear Landing Page** — hero with 3D globe, NPC carousel, live timeline preview, relationship network SVG
-- **10 Autonomous NPCs** — each with personality traits, goals, memory, and social relationships
-- **Anime/Chibi Avatars** — custom SVG renderer with big eyes, expressive faces, gradient shading, sparkle highlights
-- **Utility AI Engine** — 6-factor weighted scoring drives every decision (zero LLM cost)
-- **8-Cadran Day System** — each tick advances 3 hours (Night → Early Morning → Morning → ... → Evening → Night)
-- **3D Globe + Street Map** — cinematic globe.gl view with smooth transitions to Leaflet street map
-- **LoL-Style Champion Select** — rolling randomize animation with staggered lock-in effects
-- **LLM Narrative** — on-demand inner monologue via OpenRouter (5-model fallback chain)
-- **Social Graph** — trust/affection/respect axes, auto-upgrading relationship types
-- **Rumor Propagation** — telephone-game distortion as gossip spreads between NPCs
-- **Memory System** — short-term (20 cap) + long-term with emotional weight decay
-- **Economy** — jobs, salaries, spending, occupation-based income
-- **PDF Export** — export any NPC's full profile + narrative as PDF
-- **PostgreSQL Persistence** — Drizzle ORM + Neon serverless (8 tables, 16 indexes)
-- **Production Hardened** — rate limiting, response caching, Zod validation, security headers
-
-## Architecture Overview
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical deep-dive.
-
-### Three-Screen Flow
+## Architecture
 
 ```
-Landing Page  →  Character Setup  →  Simulation
-(light theme)    (light theme)       (dark theme)
-Hero + Globe     LoL champion        Globe/Map +
-How It Works     select with         Sidebar +
-NPC Carousel     anime avatars       Timeline +
-Timeline                             Controls
-Relationships
+┌─────────────────────────────────────────────────────┐
+│                    Browser                          │
+│                                                     │
+│  ┌─────────┐   ┌──────────┐   ┌────────────────┐  │
+│  │ Landing  │──>│  Setup   │──>│  Simulation    │  │
+│  │  Page    │   │ (Avatars)│   │                │  │
+│  │ + Globe  │   │          │   │ Globe ←→ Map   │  │
+│  └─────────┘   └──────────┘   │ Sidebar + Stats │  │
+│                                │ Timeline        │  │
+│                                │ NPC Detail      │  │
+│                                └───────┬────────┘  │
+│                                        │           │
+│  ┌─────────────────────────────────────┤           │
+│  │          Engine (useRef)            │           │
+│  │                                     │           │
+│  │  Utility AI ──> Events ──> Memory   │ 250ms     │
+│  │  Economy ──> Social ──> Rumors      │──flush──> │ React
+│  │                                     │           │
+│  │  Runs at simulation speed           │           │
+│  │  Zero React overhead                │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│  ┌──────────────────┐  ┌────────────────────────┐  │
+│  │  OSRM Routing    │  │  MapLibre GL JS        │  │
+│  │  Cached routes   │  │  3D buildings          │  │
+│  │  Interpolation   │  │  Day/night cycle       │  │
+│  │  Real Iași roads  │  │  NPC markers + routes  │  │
+│  └──────────────────┘  └────────────────────────┘  │
+└──────────────────────────┬──────────────────────────┘
+                           │ /api/narrative (on-demand)
+                    ┌──────┴──────┐
+                    │  Next.js    │
+                    │  API Route  │
+                    │             │
+                    │  Zod valid. │
+                    │  Rate limit │
+                    │  LLM chain  │
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+         OpenRouter    Neon PostgreSQL
+         (LLM API)    (persistence)
 ```
 
-### Three-Layer Decision System
+### Decision Engine
+
+Every tick (3 simulated hours), each NPC evaluates all possible actions:
 
 ```
-Layer 1: Utility AI Engine (every tick, ~0ms/NPC)
-  Weighted scoring: needs + personality + mood + goals + time + inertia
-  Top 3 actions -> weighted random selection
-
-Layer 2: Event System (emergent behavior, staggered subsystems)
-  Social interactions at shared locations (every 2nd tick)
-  Rumor propagation with distortion
-  Random life events + memory formation (every 2nd tick)
-  Memory decay (every 3rd tick)
-
-Layer 3: LLM Narrative (on-demand only)
-  Called when user clicks "Explore Inner World"
-  Multi-model fallback: Llama 3.3 -> Gemma 4 -> Llama 3.2 -> Qwen3 -> Hermes 3
-  State-hash caching (~80% hit rate)
+Score = Needs(0.30) + Time(0.20) + Personality(0.20) + Mood(0.15) + Goals(0.10) + Inertia(0.05)
 ```
 
-### Performance Architecture
+Top 3 scoring actions enter weighted random selection. NPCs don't always pick optimally.
 
-The simulation engine is **decoupled from React rendering**:
+### Tick Pipeline
+
+| Phase | Frequency | System |
+|-------|-----------|--------|
+| 1 | Every tick | Utility AI — action selection |
+| 2 | Every tick | Passive stats (energy, hunger, health) |
+| 3 | Every tick | Economy (income, spending) |
+| 4 | Every 3rd | Memory decay |
+| 5 | Every 2nd | Social interactions |
+| 6 | Every 2nd | Random life events |
+| 7 | Every 4th | Rumor pruning |
+
+### Map System
+
+- **MapLibre GL JS** with 3D building extrusion from OpenFreeMap vector tiles
+- **OSRM routing** — NPCs travel along real Iași streets, no teleportation
+- **Route animation** — `requestAnimationFrame` loop interpolates position along road waypoints
+- **Follow mode** — camera tracks selected NPC with ETA, distance, route visualization
+- **Day/night cycle** — building colors, overlay tint, stars/moon, tied to simulation time
+- **Event markers** — floating notifications for social events, conflicts, life events
+
+### LLM Integration
+
+Called only when user clicks "Explore Inner World" on an NPC:
 
 ```
-Engine Loop (useRef)          UI Sync (throttled)
-  ┌──────────────┐              ┌──────────┐
-  │ processTick()│──dirty flag──│ flush to │──> React renders
-  │ runs in ref  │   (250ms)    │ setState │    (max 4 FPS)
-  │ zero React   │              └──────────┘
-  │ overhead     │
-  └──────────────┘
+Request → Zod → Rate Limit → Cache Lookup
+                                   ↓
+                          [miss] → Gemini Flash → GPT-4o Mini → Claude Haiku → Llama 3.3
+                                   ↓
+                          Cache (10min TTL, 200 entries) → Response
 ```
-
-| Optimization | Impact |
-|---|---|
-| Engine in `useRef`, UI sync at 250ms | ~80% fewer React re-renders |
-| Subsystem throttling (social/memory/life/rumors) | ~40% less compute per tick |
-| CSS transitions instead of Framer Motion on stat bars | GPU-composited, zero JS |
-| CSS hover/active instead of Framer `whileHover`/`whileTap` | Eliminated ~8 motion instances |
-| Stable callbacks via functional `setState` | Prevents unnecessary child re-renders |
-| RAF animation throttled to ~15fps on map | 4x fewer React re-renders |
-| Icon cache (`Map<string, L.DivIcon>`) | Avoids `renderToStaticMarkup` per frame |
-| Globe data updates throttled to 1000ms | Eliminates expensive DOM recreation |
-| LLM response cache (10min TTL, 200 entries) | 600-3000x faster for cached responses |
-| In-memory rate limiting (10 req/min/IP) | Prevents API key abuse |
 
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
+|-------|------------|
 | Framework | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript (strict) |
+| Map | MapLibre GL JS (WebGL, 3D buildings) |
+| Routing | OSRM (real road navigation) |
+| Globe | globe.gl (Three.js) |
 | Styling | Tailwind CSS 4 |
-| Animations | Framer Motion (panels/modals only) + CSS transitions (live data) |
-| 3D Globe | globe.gl (Three.js) + topojson-client |
-| Street Map | Leaflet + react-leaflet (CartoDB Voyager tiles) |
-| Database | PostgreSQL (Neon serverless) |
-| ORM | Drizzle ORM (HTTP driver, zero idle connections) |
-| LLM | OpenRouter API (multi-model fallback) |
+| Animations | Framer Motion + CSS transitions |
+| Database | PostgreSQL (Neon serverless, Drizzle ORM) |
+| LLM | OpenRouter (multi-model fallback) |
 | Validation | Zod |
-| PDF | jsPDF (client-side) |
-| Avatars | Custom anime/chibi SVG renderer |
 
 ## NPCs
 
-10 NPCs with Romanian names, living in Iasi:
-
-| Name | Occupation | Personality | Starting Relationships |
-|------|-----------|-------------|----------------------|
-| Alex | Programmer | ambitious, social | Friends with Maria |
-| Maria | Teacher | generous, optimistic | Friends with Alex |
-| Elena | Doctor | cautious, honest | Romantic with Victor |
-| Victor | Entrepreneur | ambitious, manipulative | Romantic with Elena |
-| Radu | Freelancer | impulsive, social | Rivals with Cristina |
-| Cristina | Programmer | ambitious, cynical | Rivals with Radu |
-| Dan | Chef | lazy, generous | Close friends with Andrei |
-| Andrei | Artist | introverted, cautious | Close friends with Dan |
-| Ioana | Student | social, impulsive | — |
-| Mihai | Mechanic | greedy, manipulative | — |
+| Name | Occupation | Personality |
+|------|-----------|-------------|
+| Alex | Programmer | ambitious, social |
+| Maria | Teacher | generous, optimistic |
+| Elena | Doctor | cautious, honest |
+| Victor | Entrepreneur | ambitious, manipulative |
+| Radu | Freelancer | impulsive, social |
+| Cristina | Programmer | ambitious, cynical |
+| Dan | Chef | lazy, generous |
+| Andrei | Artist | introverted, cautious |
+| Ioana | Student | social, impulsive |
+| Mihai | Mechanic | greedy, manipulative |
 
 ## Project Structure
 
 ```
 src/
   app/
-    api/narrative/       # LLM endpoint (Zod validation, rate limiting, caching)
-    page.tsx             # 3-screen router: Landing → Setup → Simulation
-    globals.css          # Design system (light landing + dark simulation)
+    api/narrative/        LLM endpoint (Zod, rate limiting, caching)
+    page.tsx              3-screen router: Landing → Setup → Simulation
+    globals.css           Design tokens (light landing + simulation theme)
     layout.tsx
   components/
-    LandingPage.tsx      # Hero + 3D globe + How It Works + NPC carousel + CTA
-    HeroGlobe.tsx        # Decorative auto-rotating globe.gl (landing page)
-    CharacterSetup.tsx   # LoL-style champion select with rolling randomize
-    SimulationView.tsx   # Main dashboard: sidebar, globe/map, controls, timeline
-    GlobeView.tsx        # Interactive 3D globe (simulation, NPC markers)
-    MapView.tsx          # Leaflet street map, animated NPC markers, POIs
-    NPCDetail.tsx        # Slide-in detail panel + LLM narrative + PDF export
-    Avatar.tsx           # Anime/chibi SVG avatar renderer (gradient shading, sparkles)
-    Timeline.tsx         # Event log with type-based colored icons
-    NPCCard.tsx          # Reusable NPC card component
-    WorldStats.tsx       # Global statistics display
+    LandingPage.tsx       Hero + globe + How It Works + NPC carousel + CTA
+    LandingGlobe.tsx      Decorative globe with zoom-in transition
+    CharacterSetup.tsx    Avatar customization with randomize animation
+    SimulationView.tsx    Main dashboard: sidebar, globe/map, controls
+    GlobeView.tsx         Interactive 3D globe (simulation, NPC markers)
+    MapView.tsx           MapLibre street map, 3D buildings, routing, day/night
+    NPCDetail.tsx         Slide-in detail panel + LLM narrative + PDF export
+    Avatar.tsx            Anime/chibi SVG avatar renderer
+    Timeline.tsx          Event log
+    NPCCard.tsx           Reusable NPC card
+    PersonalityRadar.tsx  SVG radar chart
   engine/
-    types.ts             # All TypeScript interfaces
-    tick.ts              # Main loop orchestrator (8 cadrane, subsystem throttling)
-    utility-ai.ts        # 6-factor action scoring
-    events.ts            # Social interactions, effect application
-    memory.ts            # Short/long-term memory with emotional decay
-    social.ts            # Relationship graph (trust/affection/respect)
-    rumors.ts            # Rumor propagation with distortion
-    economy.ts           # Jobs, salaries, spending
-    life-events.ts       # Random life events
-    world.ts             # World initialization, NPC seeding
-    avatar.ts            # Avatar config types & defaults
+    types.ts              TypeScript interfaces
+    tick.ts               Main loop (8 cadrane, subsystem throttling)
+    utility-ai.ts         6-factor action scoring
+    events.ts             Social interactions, effect application
+    memory.ts             Short/long-term memory with decay
+    social.ts             Relationship graph (trust/affection/respect)
+    rumors.ts             Rumor propagation with distortion
+    economy.ts            Jobs, salaries, spending
+    life-events.ts        Random life events
+    world.ts              World initialization
+    avatar.ts             Avatar config types
   db/
-    schema.ts            # PostgreSQL schema (8 tables, 7 enums, 16 indexes)
-    index.ts             # Neon serverless connection (HTTP driver)
+    schema.ts             PostgreSQL schema (8 tables, 16 indexes)
+    index.ts              Neon serverless connection
   lib/
-    rate-limit.ts        # Sliding window rate limiter (per IP)
-    narrative-cache.ts   # LLM response cache (state hash, LRU, 10min TTL)
+    routing.ts            OSRM route fetching, cache, interpolation
+    rate-limit.ts         Sliding window rate limiter
+    narrative-cache.ts    LLM response cache (state hash, LRU)
   data/
-    npcs.ts              # 10 NPC definitions
-    locations.ts         # Iasi coordinates & POIs
+    npcs.ts               10 NPC definitions
+    locations.ts          Iași coordinates, POIs, building metadata
   hooks/
-    useSimulation.ts     # Decoupled engine (useRef) + throttled UI sync
-drizzle.config.ts        # Drizzle migration config
+    useSimulation.ts      Engine loop (useRef) + throttled UI sync
+    useNPCRoutes.ts       NPC route state + animation loop
 ```
 
 ## Time System
 
-The simulation day is divided into **8 cadrane** (3 hours each):
+8 cadrane per day, 3 hours each. Full week = 56 ticks.
 
-| Hour | Period |
-|------|--------|
-| 00:00 | Night |
-| 03:00 | Early Morning |
-| 06:00 | Morning |
-| 09:00 | Late Morning |
-| 12:00 | Afternoon |
-| 15:00 | Late Afternoon |
-| 18:00 | Evening |
-| 21:00 | Night |
-
-Each tick advances 3 simulated hours. A full in-game week = 56 ticks.
+```
+00:00 Night → 03:00 Early Morning → 06:00 Morning → 09:00 Late Morning
+12:00 Afternoon → 15:00 Late Afternoon → 18:00 Evening → 21:00 Night
+```
 
 ## Database
 
-PostgreSQL on Neon (serverless). Schema pushed via Drizzle Kit.
+PostgreSQL on Neon. 8 tables, 7 enums, 16 indexes.
 
 ```bash
-npm run db:push     # Push schema to Neon
-npm run db:generate # Generate migrations
-npm run db:studio   # Open Drizzle Studio
+npm run db:push      # Push schema
+npm run db:generate  # Generate migrations
+npm run db:studio    # Drizzle Studio
 ```
-
-**8 tables**: simulations, npcs, relationships, memories, rumors, events, transactions, narrative_cache
 
 ## Security
 
 - API keys in `.env.local` (gitignored, server-side only)
 - Zod input validation on API routes
 - Rate limiting (10 req/min per IP)
-- Security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
-- No user data stored — simulation runs client-side
-- LLM calls send only fictional NPC state, never user information
-
-## Scaling Strategy
-
-The architecture supports scaling to hundreds of NPCs via a three-tier approach:
-
-| Tier | NPCs | Method | Cost |
-|------|-------|--------|------|
-| Background | 400+ | Markov Chain (personality-modified matrices) | ~0ms for 1000 NPCs |
-| Foreground | 50-100 | Utility AI (full 6-factor scoring) | ~1ms per NPC |
-| Detail | 1 | LLM (on-demand narrative) | 1 API call per click |
-
-NPCs promote/demote between tiers based on viewport visibility. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+- Security headers (X-Frame-Options, CSP, nosniff)
+- Simulation runs client-side, no user data sent to LLM

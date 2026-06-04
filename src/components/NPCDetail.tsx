@@ -6,7 +6,6 @@ import { NPC, Relationship } from '../engine/types';
 import { AvatarConfig } from '../engine/avatar';
 import { summarizeMemoryForLLM } from '../engine/memory';
 import Avatar from './Avatar';
-import { Avatar3DInline } from './Character3D';
 
 const MOOD_HEX: Record<string, string> = {
   happy: '#22c55e', sad: '#3b82f6', angry: '#ef4444',
@@ -212,14 +211,14 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="fixed top-0 right-0 bottom-0 w-[400px] z-40"
       >
-        <div className="h-full bg-zinc-950/95 backdrop-blur-xl border-l border-zinc-800/40 flex flex-col shadow-2xl shadow-black/40">
+        <div className="h-full bg-white/92 backdrop-blur-xl border-l border-slate-200/50 flex flex-col shadow-2xl shadow-black/8">
 
           {/* Header */}
           <div className="relative px-6 pt-6 pb-5">
             <button
               onClick={onClose}
               className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center rounded-xl
-                bg-zinc-800/40 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700/50 transition-all duration-200"
+                bg-slate-100/60 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-all duration-200"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
             </button>
@@ -234,7 +233,7 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                     boxShadow: `0 0 24px ${moodColor}15`,
                   }}
                 >
-                  <Avatar3DInline config={avatar} size={56} mood={npc.currentMood} occupation={npc.occupation} />
+                  <Avatar config={avatar} size={56} mood={npc.currentMood} />
                 </div>
                 <div
                   className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-zinc-950"
@@ -242,8 +241,8 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                 />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-zinc-100">{npc.name}</h2>
-                <p className="text-[11px] text-zinc-500 uppercase tracking-[0.12em]">{npc.occupation} &middot; {npc.age}y</p>
+                <h2 className="text-lg font-bold text-slate-800">{npc.name}</h2>
+                <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em]">{npc.occupation} &middot; {npc.age}y</p>
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: moodColor, boxShadow: `0 0 6px ${moodColor}` }} />
                   <span className="text-xs font-medium" style={{ color: moodColor }}>{npc.currentMood}</span>
@@ -253,7 +252,7 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
 
             <div className="flex gap-1.5 mt-4 flex-wrap">
               {npc.personality.map(t => (
-                <span key={t} className="px-2.5 py-0.5 bg-zinc-800/50 text-zinc-400 rounded-lg text-[10px] border border-zinc-700/30 hover:border-zinc-600/50 transition-colors cursor-default">{t}</span>
+                <span key={t} className="px-2.5 py-0.5 bg-slate-100/80 text-slate-600 rounded-lg text-[10px] border border-slate-200/60 hover:border-slate-300/80 transition-colors cursor-default">{t}</span>
               ))}
             </div>
           </div>
@@ -269,18 +268,18 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                 <StatBar label="Stress" value={npc.stats.stress} color="#f97316" />
                 <StatBar label="Hunger" value={npc.stats.hunger} color="#a855f7" />
               </div>
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/40">
-                <span className="text-[11px] text-zinc-500">Money</span>
-                <span className="text-sm font-bold text-emerald-400 font-mono">${npc.stats.money}</span>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-200/40">
+                <span className="text-[11px] text-slate-500">Money</span>
+                <span className="text-sm font-bold text-emerald-600 font-mono">${npc.stats.money}</span>
               </div>
             </Section>
 
             <Section title="Currently">
-              <div className="flex items-center gap-3 bg-zinc-800/30 rounded-xl px-4 py-3 border border-zinc-700/20">
-                <span className="text-xl">{ACTIVITY_ICON[npc.currentActivity] ?? '❓'}</span>
+              <div className="flex items-center gap-3 bg-slate-100/60 rounded-xl px-4 py-3 border border-slate-200/40">
+                <span className="text-xl">{ACTIVITY_ICON[npc.currentActivity] ?? '\u{2753}'}</span>
                 <div>
-                  <span className="text-sm text-zinc-200 capitalize font-medium">{npc.currentActivity}</span>
-                  <span className="text-xs text-zinc-500 ml-2">@ {npc.currentLocation}</span>
+                  <span className="text-sm text-slate-700 capitalize font-medium">{npc.currentActivity}</span>
+                  <span className="text-xs text-slate-400 ml-2">@ {npc.currentLocation}</span>
                 </div>
               </div>
             </Section>
@@ -291,10 +290,10 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                   {npc.goals.filter(g => g.status === 'active').map(g => (
                     <div key={g.id}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-zinc-300">{g.description}</span>
-                        <span className="text-[10px] text-zinc-500 font-mono">{g.progress}%</span>
+                        <span className="text-[11px] text-slate-600">{g.description}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{g.progress}%</span>
                       </div>
-                      <div className="h-1.5 bg-zinc-800/60 rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-slate-200/60 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-[width] duration-500 ease-out"
                           style={{ width: `${g.progress}%` }}
@@ -311,14 +310,14 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                 <div className="space-y-2">
                   {notableRels.map(r => {
                     const other = allNPCs.get(r.targetId);
-                    const style = REL_STYLE[r.type] ?? 'bg-zinc-800/50 text-zinc-400 border-zinc-700/30';
+                    const style = REL_STYLE[r.type] ?? 'bg-slate-100/60 text-slate-500 border-slate-200/40';
                     return (
                       <div key={r.targetId} className="flex items-center gap-2 group">
-                        <span className="text-[12px] text-zinc-300 flex-1 group-hover:text-zinc-100 transition-colors">{other?.name ?? '?'}</span>
+                        <span className="text-[12px] text-slate-600 flex-1 group-hover:text-slate-800 transition-colors">{other?.name ?? '?'}</span>
                         <span className={`text-[9px] px-2 py-0.5 rounded-lg border ${style} uppercase tracking-wider font-medium`}>
                           {r.type.replace('_', ' ')}
                         </span>
-                        <div className="flex gap-2 text-[9px] text-zinc-600 font-mono">
+                        <div className="flex gap-2 text-[9px] text-slate-400 font-mono">
                           <span>T:{r.trust}</span>
                           <span>A:{r.affection}</span>
                           <span>R:{r.respect}</span>
@@ -332,13 +331,13 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
 
             <Section title="Recent Memories">
               {npc.memory.shortTerm.length === 0 ? (
-                <p className="text-[11px] text-zinc-600 italic">No memories yet.</p>
+                <p className="text-[11px] text-slate-400 italic">No memories yet.</p>
               ) : (
                 <div className="space-y-1.5">
                   {npc.memory.shortTerm.slice(0, 6).map(m => (
                     <div key={m.id} className="flex gap-2 text-[11px] group">
-                      <span className="text-zinc-700 shrink-0 mt-0.5">•</span>
-                      <span className="text-zinc-400 group-hover:text-zinc-300 transition-colors">{m.description}</span>
+                      <span className="text-slate-300 shrink-0 mt-0.5">{'\u{2022}'}</span>
+                      <span className="text-slate-500 group-hover:text-slate-700 transition-colors">{m.description}</span>
                     </div>
                   ))}
                 </div>
@@ -352,9 +351,9 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                 whileTap={{ scale: 0.99 }}
                 onClick={generateNarrative}
                 disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500
-                  disabled:from-zinc-800 disabled:to-zinc-800 text-white text-sm font-semibold rounded-xl transition-all duration-300
-                  shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 disabled:shadow-none"
+                className="w-full py-3 bg-gradient-to-r from-[#007AFF] to-indigo-500 hover:from-[#338FFF] hover:to-indigo-400
+                  disabled:from-slate-300 disabled:to-slate-300 text-white text-sm font-semibold rounded-xl transition-all duration-300
+                  shadow-lg shadow-blue-500/20 hover:shadow-blue-400/30 disabled:shadow-none"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -368,9 +367,9 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-3 p-4 bg-zinc-800/20 rounded-xl border border-zinc-700/20"
+                  className="mt-3 p-4 bg-slate-100/60 rounded-xl border border-slate-200/40"
                 >
-                  <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
                     <span className="animate-pulse">💭</span>
                     <span>Connecting to LLM...</span>
                   </div>
@@ -382,13 +381,13 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
-                  className="mt-3 p-5 bg-zinc-800/30 rounded-xl text-[12px] text-zinc-300 whitespace-pre-wrap leading-relaxed border border-zinc-700/20"
+                  className="mt-3 p-5 bg-slate-50/80 rounded-xl text-[12px] text-slate-600 whitespace-pre-wrap leading-relaxed border border-slate-200/40"
                 >
-                  <div className="flex items-center gap-1.5 mb-3 text-[9px] text-zinc-500 uppercase tracking-[0.15em]">
-                    <span>💭</span>
+                  <div className="flex items-center gap-1.5 mb-3 text-[9px] text-slate-400 uppercase tracking-[0.15em]">
+                    <span>{'\u{1F4AD}'}</span>
                     <span className="font-medium">Inner Monologue</span>
                     {usedModel && (
-                      <span className="ml-auto font-mono text-zinc-600">{usedModel.split('/').pop()?.replace(':free', '')}</span>
+                      <span className="ml-auto font-mono text-slate-400">{usedModel.split('/').pop()?.replace(':free', '')}</span>
                     )}
                   </div>
                   {narrative}
@@ -396,9 +395,9 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     onClick={exportPDF}
-                    className="mt-4 w-full py-2.5 bg-zinc-700/40 hover:bg-zinc-600/40 text-zinc-300
+                    className="mt-4 w-full py-2.5 bg-slate-100/80 hover:bg-slate-200/80 text-slate-600
                       text-[11px] font-medium rounded-xl transition-all duration-200
-                      flex items-center justify-center gap-2 border border-zinc-600/20 hover:border-zinc-500/30"
+                      flex items-center justify-center gap-2 border border-slate-200/60 hover:border-slate-300/80"
                   >
                     📄 Export as PDF
                   </motion.button>
@@ -415,7 +414,7 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.15em] mb-2.5">{title}</h3>
+      <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.15em] mb-2.5">{title}</h3>
       {children}
     </div>
   );
@@ -428,14 +427,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const StatBar = memo(function StatBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="text-[11px] text-zinc-500 w-16">{label}</span>
-      <div className="flex-1 h-1.5 bg-zinc-800/60 rounded-full overflow-hidden">
+      <span className="text-[11px] text-slate-500 w-16">{label}</span>
+      <div className="flex-1 h-1.5 bg-slate-200/60 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-[width] duration-500 ease-out"
-          style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}40`, width: `${value}%` }}
+          style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}25`, width: `${value}%` }}
         />
       </div>
-      <span className="text-[11px] text-zinc-500 w-7 text-right font-mono">{value}</span>
+      <span className="text-[11px] text-slate-600 w-7 text-right font-mono">{value}</span>
     </div>
   );
 });
