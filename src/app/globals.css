@@ -99,15 +99,14 @@ body {
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--accent);
-  backdrop-filter: blur(8px);
 }
 
 .light-card {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: 24px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   box-shadow: var(--shadow-card);
   transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -156,7 +155,6 @@ body {
   font-weight: 500;
   font-size: 15px;
   border: 1px solid var(--border-light);
-  backdrop-filter: blur(8px);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn-ghost-light:hover {
@@ -277,8 +275,8 @@ body {
 .glass-card-premium {
   position: relative;
   background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 22px;
   box-shadow:
@@ -336,7 +334,6 @@ body {
   font-size: 14px;
   border: 1px solid var(--border-light);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(12px);
 }
 .btn-secondary-light:hover {
   background: rgba(0, 0, 0, 0.06);
@@ -371,17 +368,19 @@ body {
 /* ── Simulation glass panels ── */
 .glass {
   background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.6);
   box-shadow: var(--shadow-soft);
+  will-change: transform;
 }
 .glass-strong {
   background: var(--bg-glass-strong);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: var(--shadow-card);
+  will-change: transform;
 }
 
 /* ── Relationship network ── */
@@ -469,6 +468,16 @@ body {
   outline: none !important;
   box-shadow: none !important;
   overflow: visible !important;
+}
+
+/* ── Star twinkle (CSS instead of SVG SMIL) ── */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.9; }
+}
+.star-twinkle {
+  animation: star-twinkle ease-in-out infinite;
+  will-change: opacity;
 }
 
 .npc-card-shine:hover::after {

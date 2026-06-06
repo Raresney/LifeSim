@@ -1,42 +1,64 @@
 'use client';
 
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { NPC } from '../engine/types';
 import { getLocationCoords } from '../data/locations';
 import { getRoute, interpolateRoute, RouteResult } from '../lib/routing';
 
 export interface NPCRouteState {
   npcId: string;
-  // Current interpolated position (GeoJSON order: [lng, lat])
   position: [number, number];
-  // Full route from previous location to current target
   route: [number, number][] | null;
-  // Route progress: 0 = at origin, 1 = at destination
   progress: number;
-  // Target location id
   targetLocation: string;
-  // Previous location id (where they came from)
   previousLocation: string;
-  // Is this NPC currently in transit?
   isMoving: boolean;
-  // Destination coordinates
   destination: { lat: number; lng: number };
-  // Estimated arrival (route duration in seconds)
   routeDuration: number;
-  // Route distance in meters
   routeDistance: number;
 }
 
 const ANIMATION_SPEED = 0.008;
 
-export function useNPCRoutes(npcs: Map<string, NPC>) {
+/**
+ * @param npcs     - current NPC map from simulation
+ * @param isRunning - simulation running state (pauses animation)
+ * @param active    - whether the map is VISIBLE (false = skip ALL work)
+ */
+export function useNPCRoutes(npcs: Map<string, NPC>, isRunning: boolean, active: boolean) {
   const routeStatesRef = useRef<Map<string, NPCRouteState>>(new Map());
   const lastLocationsRef = useRef<Map<string, string>>(new Map());
   const animFrameRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
-  const lastFlushRef = useRef(0);
+  const listenersRef = useRef<Set<() => void>>(new Set());
+  const versionRef = useRef(0);
+  const isRunningRef = useRef(isRunning);
+  const activeRef = useRef(active);
 
-  const [positions, setPositions] = useState<Map<string, NPCRouteState>>(new Map());
+  // Sync refs
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+    activeRef.current = active;
+
+    // If not active OR not running: kill animation loop immediately
+    if (!isRunning || !active) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
+    }
+
+    // Resumed + active: restart if any NPC is mid-route
+    let anyMoving = false;
+    for (const [, state] of routeStatesRef.current) {
+      if (state.isMoving && state.route && state.route.length >= 2 && state.progress < 1) {
+        anyMoving = true;
+        break;
+      }
+    }
+    if (anyMoving) startAnimation();
+  }, [isRunning, active]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -49,7 +71,58 @@ export function useNPCRoutes(npcs: Map<string, NPC>) {
     };
   }, []);
 
+  const notify = useCallback(() => {
+    versionRef.current++;
+    for (const fn of listenersRef.current) fn();
+  }, []);
+
+  const startAnimation = useCallback(() => {
+    if (animFrameRef.current || !mountedRef.current) return;
+
+    const animate = () => {
+      if (!mountedRef.current) {
+        animFrameRef.current = null;
+        return;
+      }
+
+      // STOP if paused or hidden
+      if (!isRunningRef.current || !activeRef.current) {
+        animFrameRef.current = null;
+        return;
+      }
+
+      let anyMoving = false;
+
+      for (const [, state] of routeStatesRef.current) {
+        if (!state.isMoving || !state.route || state.route.length < 2) continue;
+
+        state.progress = Math.min(1, state.progress + ANIMATION_SPEED);
+        state.position = interpolateRoute(state.route, state.progress);
+
+        if (state.progress >= 1) {
+          state.isMoving = false;
+          state.position = [state.destination.lng, state.destination.lat];
+        } else {
+          anyMoving = true;
+        }
+      }
+
+      notify();
+
+      if (anyMoving) {
+        animFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        animFrameRef.current = null;
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(animate);
+  }, [notify]);
+
+  // Detect NPC location changes — skip entirely when not active
   useEffect(() => {
+    if (!active) return;
+
     for (const [id, npc] of npcs) {
       const prevLoc = lastLocationsRef.current.get(id);
       const curLoc = npc.currentLocation;
@@ -92,6 +165,9 @@ export function useNPCRoutes(npcs: Map<string, NPC>) {
             state.routeDistance = result.distance;
             state.progress = 0;
             state.isMoving = true;
+            if (isRunningRef.current && activeRef.current) {
+              startAnimation();
+            }
           }
         });
       } else {
@@ -101,49 +177,18 @@ export function useNPCRoutes(npcs: Map<string, NPC>) {
       }
     }
 
-    startAnimation();
-  }, [npcs]);
+    notify();
+    if (isRunningRef.current && activeRef.current) {
+      startAnimation();
+    }
+  }, [npcs, active, startAnimation, notify]);
 
-  const startAnimation = useCallback(() => {
-    if (animFrameRef.current || !mountedRef.current) return;
-
-    const animate = (now: number) => {
-      if (!mountedRef.current) {
-        animFrameRef.current = null;
-        return;
-      }
-
-      let anyMoving = false;
-
-      for (const [id, state] of routeStatesRef.current) {
-        if (!state.isMoving || !state.route || state.route.length < 2) continue;
-
-        state.progress = Math.min(1, state.progress + ANIMATION_SPEED);
-        state.position = interpolateRoute(state.route, state.progress);
-
-        if (state.progress >= 1) {
-          state.isMoving = false;
-          state.position = [state.destination.lng, state.destination.lat];
-        } else {
-          anyMoving = true;
-        }
-      }
-
-      if (now - lastFlushRef.current > 66) {
-        lastFlushRef.current = now;
-        setPositions(new Map(routeStatesRef.current));
-      }
-
-      if (anyMoving) {
-        animFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        setPositions(new Map(routeStatesRef.current));
-        animFrameRef.current = null;
-      }
-    };
-
-    animFrameRef.current = requestAnimationFrame(animate);
-  }, []);
-
-  return positions;
+  return {
+    statesRef: routeStatesRef,
+    versionRef,
+    subscribe: useCallback((fn: () => void) => {
+      listenersRef.current.add(fn);
+      return () => { listenersRef.current.delete(fn); };
+    }, []),
+  };
 }

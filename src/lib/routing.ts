@@ -126,13 +126,17 @@ export async function prefetchRoutes(
   }
 }
 
-export function interpolateRoute(
-  route: [number, number][],
-  progress: number,
-): [number, number] {
-  if (route.length === 0) return [0, 0];
-  if (route.length === 1 || progress <= 0) return route[0]!;
-  if (progress >= 1) return route[route.length - 1]!;
+interface CachedRouteGeometry {
+  route: [number, number][];
+  segLengths: number[];
+  totalLength: number;
+}
+
+const geometryCache = new WeakMap<[number, number][], CachedRouteGeometry>();
+
+function getRouteGeometry(route: [number, number][]): CachedRouteGeometry {
+  const cached = geometryCache.get(route);
+  if (cached) return cached;
 
   const segLengths: number[] = [];
   let totalLength = 0;
@@ -143,6 +147,21 @@ export function interpolateRoute(
     segLengths.push(len);
     totalLength += len;
   }
+
+  const result = { route, segLengths, totalLength };
+  geometryCache.set(route, result);
+  return result;
+}
+
+export function interpolateRoute(
+  route: [number, number][],
+  progress: number,
+): [number, number] {
+  if (route.length === 0) return [0, 0];
+  if (route.length === 1 || progress <= 0) return route[0]!;
+  if (progress >= 1) return route[route.length - 1]!;
+
+  const { segLengths, totalLength } = getRouteGeometry(route);
 
   if (totalLength === 0) return route[0]!;
 

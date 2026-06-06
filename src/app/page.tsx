@@ -10,15 +10,15 @@ import SimulationView from '../components/SimulationView';
 type Screen = 'landing' | 'setup' | 'simulation';
 
 const pageVariants = {
-  initial: { opacity: 0, scale: 0.97, y: 12, filter: 'blur(4px)' },
-  animate: { opacity: 1, scale: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
-  exit: { opacity: 0, scale: 1.08, y: -20, filter: 'blur(10px)', transition: { duration: 0.6, ease: [0.4, 0, 1, 1] as [number, number, number, number] } },
+  initial: { opacity: 0, scale: 0.97, y: 12 },
+  animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
+  exit: { opacity: 0, scale: 1.08, y: -20, transition: { duration: 0.6, ease: [0.4, 0, 1, 1] as [number, number, number, number] } },
 };
 
 const simVariants = {
-  initial: { opacity: 0, scale: 1.05, filter: 'blur(6px)' },
-  animate: { opacity: 1, scale: 1, filter: 'blur(0px)', transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
-  exit: { opacity: 0, scale: 0.95, filter: 'blur(4px)', transition: { duration: 0.3 } },
+  initial: { opacity: 0, scale: 1.05 },
+  animate: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
+  exit: { opacity: 0, scale: 0.95, transition: { duration: 0.3 } },
 };
 
 export default function Home() {
