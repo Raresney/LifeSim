@@ -5,6 +5,7 @@ import { WorldState, SimEvent } from '../engine/types';
 import { createWorld } from '../engine/world';
 import { processTick, formatTime } from '../engine/tick';
 
+// Reduced from 400ms to 250ms for faster NPC location change propagation
 const UI_SYNC_INTERVAL = 250;
 
 export function useSimulation() {
@@ -67,8 +68,19 @@ export function useSimulation() {
   }, [flushToReact]);
 
   const pause = useCallback(() => {
+    // Stop engine interval immediately
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    // Stop UI sync interval
+    if (uiSyncRef.current) {
+      clearInterval(uiSyncRef.current);
+      uiSyncRef.current = null;
+    }
     worldRef.current = { ...worldRef.current, isRunning: false };
     dirtyRef.current = true;
+    // Immediate flush so React sees isRunning=false THIS frame
     flushToReact();
   }, [flushToReact]);
 
@@ -80,6 +92,7 @@ export function useSimulation() {
 
   const reset = useCallback(() => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (uiSyncRef.current) { clearInterval(uiSyncRef.current); uiSyncRef.current = null; }
     worldRef.current = createWorld();
     eventsRef.current = [];
     dirtyRef.current = false;
@@ -94,7 +107,7 @@ export function useSimulation() {
 
     const w = worldRef.current;
     if (w.isRunning) {
-      const ms = Math.max(150, 1000 / w.speed);
+      const ms = Math.max(300, 1000 / w.speed);
       intervalRef.current = setInterval(engineTick, ms);
     }
 

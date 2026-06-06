@@ -46,6 +46,8 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
   const globeRef = useRef<any>(null);
   const [mounted, setMounted] = useState(false);
   const zoomTriggeredRef = useRef(false);
+  const rendererRef = useRef<any>(null);
+  const controlsRef = useRef<any>(null);
 
   const getPoints = useCallback((): GlobePoint[] => {
     const points: GlobePoint[] = [];
@@ -79,11 +81,14 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
     if (!containerRef.current || mounted) return;
 
     let countryFeatures: any[] = [];
+    let destroyed = false;
 
     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(r => r.json())
       .then(topology => {
+        if (destroyed) return;
         import('topojson-client').then(topojson => {
+          if (destroyed) return;
           countryFeatures = (topojson.feature(topology, topology.objects.countries) as any).features;
           if (globeRef.current) {
             globeRef.current.polygonsData(countryFeatures);
@@ -93,6 +98,7 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       .catch(() => {});
 
     import('globe.gl').then((mod) => {
+      if (destroyed) return;
       const Globe = mod.default;
       const globe = new (Globe as any)(containerRef.current!)
         .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -171,6 +177,7 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       globeMat.bumpScale = 3;
 
       const renderer = globe.renderer();
+      rendererRef.current = renderer;
       renderer.domElement.style.outline = 'none';
 
       if (!document.getElementById('globe-pulse-css')) {
@@ -189,6 +196,7 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       setMounted(true);
 
       const controls = globe.controls();
+      controlsRef.current = controls;
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.3;
       controls.enableDamping = true;
@@ -208,22 +216,54 @@ export default function GlobeView({ npcs, avatars, onNPCClick, focusedNPCId, onZ
       });
 
       setTimeout(() => {
+        if (destroyed) return;
         globe.pointOfView(
           { lat: IASI_CENTER.lat, lng: IASI_CENTER.lng, altitude: 0.5 },
           3000
         );
         setTimeout(() => {
-          controls.autoRotate = false;
+          if (!destroyed && controls) controls.autoRotate = false;
         }, 3200);
       }, 800);
     });
 
     return () => {
-      if (globeRef.current && containerRef.current) {
+      destroyed = true;
+
+      // 1. Stop orbit controls (stops their internal event listeners + RAF updates)
+      if (controlsRef.current) {
+        controlsRef.current.dispose();
+        controlsRef.current = null;
+      }
+
+      // 2. Pause globe.gl's internal animation loop
+      if (globeRef.current) {
+        try {
+          // globe.gl exposes pauseAnimation() to stop its internal RAF
+          if (typeof globeRef.current.pauseAnimation === 'function') {
+            globeRef.current.pauseAnimation();
+          }
+          // Clear all data to reduce Three.js scene size before dispose
+          globeRef.current.pointsData([]);
+          globeRef.current.htmlElementsData([]);
+          globeRef.current.polygonsData([]);
+        } catch {}
+      }
+
+      // 3. Dispose WebGL renderer (frees GPU memory)
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        rendererRef.current.forceContextLoss();
+        rendererRef.current = null;
+      }
+
+      // 4. Remove canvas from DOM
+      if (containerRef.current) {
         const canvas = containerRef.current.querySelector('canvas');
         if (canvas) canvas.remove();
-        globeRef.current = null;
       }
+
+      globeRef.current = null;
     };
   }, []);
 

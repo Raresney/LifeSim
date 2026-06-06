@@ -9,9 +9,49 @@ import { useSimulation } from '../hooks/useSimulation';
 import NPCDetail from './NPCDetail';
 import Timeline from './Timeline';
 import Avatar from './Avatar';
+import { WorldState } from '../engine/types';
 
 const GlobeView = dynamic(() => import('./GlobeView'), { ssr: false });
 const MapView = dynamic(() => import('./MapView'), { ssr: false });
+
+// Wrapper that only re-renders NPCDetail when the selected NPC's data actually changes
+const MemoizedNPCDetail = memo(function MemoizedNPCDetail({
+  selectedId, world, avatars, onClose,
+}: {
+  selectedId: string; world: WorldState; avatars: Record<string, AvatarConfig>; onClose: () => void;
+}) {
+  const npc = world.npcs.get(selectedId);
+  if (!npc) return null;
+  return (
+    <NPCDetail
+      npc={npc}
+      avatar={avatars[selectedId]}
+      relationships={world.relationships.get(selectedId) ?? []}
+      allNPCs={world.npcs}
+      onClose={onClose}
+    />
+  );
+}, (prev, next) => {
+  if (prev.selectedId !== next.selectedId) return false;
+  if (prev.onClose !== next.onClose) return false;
+  // Only re-render if the specific NPC changed
+  const prevNpc = prev.world.npcs.get(prev.selectedId);
+  const nextNpc = next.world.npcs.get(next.selectedId);
+  if (!prevNpc || !nextNpc) return false;
+  return (
+    prevNpc.currentMood === nextNpc.currentMood &&
+    prevNpc.currentActivity === nextNpc.currentActivity &&
+    prevNpc.currentLocation === nextNpc.currentLocation &&
+    prevNpc.stats.energy === nextNpc.stats.energy &&
+    prevNpc.stats.health === nextNpc.stats.health &&
+    prevNpc.stats.happiness === nextNpc.stats.happiness &&
+    prevNpc.stats.stress === nextNpc.stats.stress &&
+    prevNpc.stats.hunger === nextNpc.stats.hunger &&
+    prevNpc.stats.money === nextNpc.stats.money &&
+    prevNpc.memory.shortTerm.length === nextNpc.memory.shortTerm.length &&
+    prevNpc.goals.length === nextNpc.goals.length
+  );
+});
 
 interface Props {
   avatars: Record<string, AvatarConfig>;
@@ -125,7 +165,23 @@ const NPCSidebarItem = memo(function NPCSidebarItem({
       </div>
     </button>
   );
-});
+}, (prev, next) =>
+  prev.isFocused === next.isFocused &&
+  prev.npc.id === next.npc.id &&
+  prev.npc.currentMood === next.npc.currentMood &&
+  prev.npc.currentActivity === next.npc.currentActivity &&
+  prev.npc.currentLocation === next.npc.currentLocation &&
+  prev.npc.stats.energy === next.npc.stats.energy &&
+  prev.npc.stats.health === next.npc.stats.health &&
+  prev.npc.stats.happiness === next.npc.stats.happiness &&
+  prev.npc.stats.stress === next.npc.stats.stress &&
+  prev.npc.stats.money === next.npc.stats.money &&
+  prev.npc.stats.hunger === next.npc.stats.hunger &&
+  prev.avatar === next.avatar &&
+  prev.onFocus === next.onFocus &&
+  prev.onUnfocus === next.onUnfocus &&
+  prev.onDetail === next.onDetail
+);
 
 type ViewMode = 'globe' | 'map' | 'transitioning-to-map' | 'transitioning-to-globe';
 
@@ -139,6 +195,9 @@ export default function SimulationView({ avatars, onBack }: Props) {
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const npcs = useMemo(() => Array.from(world.npcs.values()), [world.npcs]);
+
+  const totalMoney = useMemo(() => npcs.reduce((s, n) => s + n.stats.money, 0), [npcs]);
+  const rumorsCount = world.rumors.length;
 
   const viewing = focusedNPC ? (world.npcs.get(focusedNPC.id) ?? null) : null;
 
@@ -173,10 +232,13 @@ export default function SimulationView({ avatars, onBack }: Props) {
   }, [viewMode]);
 
   const handleDetail = useCallback((npc: NPC) => setSelectedNPC(npc), []);
+  const handleCloseDetail = useCallback(() => setSelectedNPC(null), []);
 
   const isShowingMap = viewMode === 'map' || viewMode === 'transitioning-to-globe';
   const isShowingGlobe = viewMode === 'globe' || viewMode === 'transitioning-to-map';
   const isTransitioning = viewMode === 'transitioning-to-map' || viewMode === 'transitioning-to-globe';
+  const mapEverShown = useRef(false);
+  if (isShowingMap) mapEverShown.current = true;
 
   const handleMapNPCClick = useCallback((npc: NPC) => {
     setFocusedNPC(npc);
@@ -187,10 +249,13 @@ export default function SimulationView({ avatars, onBack }: Props) {
     transitionToMap(npc);
   }, [transitionToMap]);
 
+  const npcsRef = useRef(world.npcs);
+  npcsRef.current = world.npcs;
+
   const handleGlobeZoomIn = useCallback(() => {
-    const first = Array.from(world.npcs.values())[0];
+    const first = Array.from(npcsRef.current.values())[0];
     if (first) transitionToMap(first);
-  }, [world.npcs, transitionToMap]);
+  }, [transitionToMap]);
 
   return (
     <div className="h-screen w-screen overflow-hidden relative flex flex-col sim-light">
@@ -219,7 +284,7 @@ export default function SimulationView({ avatars, onBack }: Props) {
 
       <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
         {/* Day labels */}
-        <div className="flex items-center h-5 bg-white/70 backdrop-blur-md border-b border-slate-200/40">
+        <div className="flex items-center h-5 bg-white/90 border-b border-slate-200/40">
           {[1, 2, 3, 4, 5, 6, 7].map(day => {
             const isToday = world.time.day === day;
             const isPast = world.time.day > day;
@@ -313,8 +378,8 @@ export default function SimulationView({ avatars, onBack }: Props) {
           ) : (
             <>
               <StatPill icon="👥" value={`${npcs.length} NPCs`} color="text-blue-400" glow="shadow-blue-400/10" />
-              <StatPill icon="💰" value={`$${npcs.reduce((s, n) => s + n.stats.money, 0)}`} color="text-emerald-400" glow="shadow-emerald-400/10" />
-              <StatPill icon="👀" value={`${world.rumors.length} rumors`} color="text-purple-400" glow="shadow-purple-400/10" />
+              <StatPill icon="💰" value={`$${totalMoney}`} color="text-emerald-400" glow="shadow-emerald-400/10" />
+              <StatPill icon="👀" value={`${rumorsCount} rumors`} color="text-purple-400" glow="shadow-purple-400/10" />
             </>
           )}
         </div>
@@ -382,23 +447,27 @@ export default function SimulationView({ avatars, onBack }: Props) {
       )}
 
       <div className="absolute inset-0 z-0">
-        <div style={{
-          position: 'absolute', inset: 0,
-          visibility: isShowingMap ? 'visible' : 'hidden',
-          opacity: isShowingMap ? 1 : 0,
-          transition: 'opacity 0.4s ease',
-          zIndex: isShowingMap ? 1 : 0,
-        }}>
-          <MapView
-            npcs={world.npcs}
-            avatars={avatars}
-            onNPCClick={handleMapNPCClick}
-            focusedNPCId={focusedNPC?.id ?? null}
-            onZoomOutToGlobe={transitionToGlobe}
-            hour={world.time.hour}
-            recentEvents={recentEvents}
-          />
-        </div>
+        {mapEverShown.current && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            visibility: isShowingMap ? 'visible' : 'hidden',
+            opacity: isShowingMap ? 1 : 0,
+            transition: 'opacity 0.4s ease',
+            zIndex: isShowingMap ? 1 : 0,
+          }}>
+            <MapView
+              npcs={world.npcs}
+              avatars={avatars}
+              onNPCClick={handleMapNPCClick}
+              focusedNPCId={focusedNPC?.id ?? null}
+              onZoomOutToGlobe={transitionToGlobe}
+              hour={world.time.hour}
+              recentEvents={recentEvents}
+              isRunning={world.isRunning}
+              active={isShowingMap}
+            />
+          </div>
+        )}
         {isShowingGlobe && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
             <GlobeView
@@ -530,12 +599,11 @@ export default function SimulationView({ avatars, onBack }: Props) {
 
       <AnimatePresence>
         {selectedNPC && (
-          <NPCDetail
-            npc={world.npcs.get(selectedNPC.id) ?? selectedNPC}
-            avatar={avatars[selectedNPC.id]}
-            relationships={world.relationships.get(selectedNPC.id) ?? []}
-            allNPCs={world.npcs}
-            onClose={() => setSelectedNPC(null)}
+          <MemoizedNPCDetail
+            selectedId={selectedNPC.id}
+            world={world}
+            avatars={avatars}
+            onClose={handleCloseDetail}
           />
         )}
       </AnimatePresence>

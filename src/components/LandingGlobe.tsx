@@ -110,9 +110,17 @@ export default function LandingGlobe({ zooming, onZoomComplete }: Props) {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (globeRef.current && containerRef.current) {
-        const canvas = containerRef.current.querySelector('canvas');
-        if (canvas) canvas.remove();
+      if (globeRef.current) {
+        try {
+          const renderer = globeRef.current.renderer();
+          if (renderer) renderer.dispose();
+          const controls = globeRef.current.controls();
+          if (controls) controls.dispose();
+        } catch {}
+        if (containerRef.current) {
+          const canvas = containerRef.current.querySelector('canvas');
+          if (canvas) canvas.remove();
+        }
         globeRef.current = null;
       }
     };

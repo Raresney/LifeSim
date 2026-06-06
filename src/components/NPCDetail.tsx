@@ -211,7 +211,7 @@ export default function NPCDetail({ npc, avatar, relationships, allNPCs, onClose
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="fixed top-0 right-0 bottom-0 w-[400px] z-40"
       >
-        <div className="h-full bg-white/92 backdrop-blur-xl border-l border-slate-200/50 flex flex-col shadow-2xl shadow-black/8">
+        <div className="h-full bg-white/95 backdrop-blur-md border-l border-slate-200/50 flex flex-col shadow-2xl shadow-black/8">
 
           {/* Header */}
           <div className="relative px-6 pt-6 pb-5">
